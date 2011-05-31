@@ -1,0 +1,76 @@
+=========
+Changelog
+=========
+
+
+tui
+===
+
+v1.1.1
+------
+
+* Feature:    tui.__init__() now accepts a main keyword argument, which if present will be used to 
+			  determine the location of .cfg and .docs files and for introspection of __version__.  
+
+
+v1.0.5
+------
+
+* Deprecated: The methods tui.makeposarg() and tui.appendposarg() no longer have the varnum parameter.
+
+* Feature:    New instantiantiation parameter for PositionalArgument: optional = False.
+              Optional Positional Arguments' .parse() methods can now return None if they are given 
+              nothing to parse. This also affects tui.makeposarg().
+
+* Feature:    New instantiantiation parameter for PositionalArgument: recurring = False.
+              A Recurring Positional Argument's .parse() method will consume the rest (at least one)
+              of the args and returns a list of parsed values. The list will be length 0 if there is 
+              nothing more to parse. This also affects tui.makeposarg().
+
+* Feature:    Setting recurring = True on Option instantiation will cause Option.value() to return a 
+              list of values where the first item is the builtin default and any following items will be
+              the rest of the values in the order parsed. This is also reflected in the tui.makeoption()
+              method.
+
+* Bugfix:     A single '-' character on the command line can no longer be interpreted as an empty option 
+              abbreviation block.
+
+* Bugfix:     Fixed typos in .addconfigfiledocs() strings. The section on Formatting and Nonformatting 
+              Options now has a correct heading, and also option1 and option2 from the example are labled
+              correctly as formatting and nonformatting, respectively.
+
+* Bugfix:     Fixed typo in ._parseoptions() (before: sOption, after: oOption.name()). This used to 
+              crash tui (throw uncatched UnboundLocalError) when the method encountered superfluous 
+              occurences of non-recurring Options inside Option abbreviation blocks. Now, 
+              OptionRecurrenceError(ParseError) will be thrown instead (easier to catch, more useful 
+              error msg. It is in fact caught by .initprog() method, if used).
+
+
+v1.0.4
+------
+
+* Bugfix: "[%(command)s]" is now the default section name in config files rather than "[%(progname)s]"  .
+
+
+v1.0.3
+------
+
+* Feature: tui.makeoption() now accepts the "recurring = False <bool>" keyword argument.
+
+* Feature: Default Format presenter is now "repr" instead of "str".
+
+* Bugfix:  DocVars can now be used in OPTION, ARGUMENT and FILE blocks with the documented 
+ 	   results.
+
+* Bugfix:  TextBlockParser will no longer append a single space to SingleParagraph blocks
+	   when a blank line (whitespace only) is encountered.
+
+
+v1.0.2
+------
+
+* Convention: formats.Formats should no longer return None (reserved for unused optional positional arguments).
+* Bugfix:     Paragraphs split over multiple lines in docs files are now always
+              concatenated with exactly one separating space character
+
+
