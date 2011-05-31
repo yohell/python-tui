@@ -574,11 +574,11 @@ class tui:
     """Textual user interface."""
     def __init__(self,
                  main=None,
-                 progname='ChangeThisProgramName',
+                 progname=None,
                  programmer='ChangeThisProgrammerName',
                  versionstr='0.1.0',
                  title='%(progname)s v%(version)s by %(programmer)s.',
-                 description='ChangeThisDescription',
+                 description=None,
                  contact=None,
                  copyright=None,
                  command='',
@@ -719,12 +719,17 @@ class tui:
                 sys.path.insert(0, mainmodule_dir)
                 mainmodule = mainmodule.split('.')[0]
             try:
-                versionstr = __import__(mainmodule).__version__
+                mod = __import__(mainmodule)
+                versionstr = mod.__version__
+                if description is None:
+                    description = str(mod.__doc__).splitlines()[0]
             except:
                 pass
             sys.path.pop(0)
             if command is None:
                 command = mainmodule
+            if progname is None:
+                progname = mainmodule.capitalize()
             if docsfile is None:
                 docsfile = os.path.join(mainmodule_dir, mainmodule + '.docs')
         self.dssDocVars = {'progname': progname,  'programmer': programmer,
