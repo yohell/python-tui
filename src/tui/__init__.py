@@ -573,28 +573,28 @@ def get_terminal_size(default_cols=80, default_rows=25):
 class tui:
     """Textual user interface."""
     def __init__(self,
-                 main = None,
-                 progname = 'ChangeThisProgramName',
-                 programmer = 'ChangeThisProgrammerName',
-                 versionstr = '0.1.0',
-                 title = '%(progname)s v%(version)s by %(programmer)s.',
-                 description = 'ChangeThisDescription',
-                 contact = None,
-                 copyright = None,
-                 command = '',
-                 usage = '',
-                 generaldocs = None,
-                 additionaldocs = None,
-                 filedocs = None,
-                 notedocs = None,
-                 docsfile = None,
-                 width = 0,
-                 configfiles = None,
-                 sections = None,
-                 helpoption = StandardHelpOption,
-                 longhelpoption = StandardLongHelpOption,
-                 versionoption = StandardVersionOption,
-                 settingsoption = StandardSettingsOption):
+                 main=None,
+                 progname='ChangeThisProgramName',
+                 programmer='ChangeThisProgrammerName',
+                 versionstr='0.1.0',
+                 title='%(progname)s v%(version)s by %(programmer)s.',
+                 description='ChangeThisDescription',
+                 contact=None,
+                 copyright=None,
+                 command='',
+                 usage='',
+                 generaldocs=None,
+                 additionaldocs=None,
+                 filedocs=None,
+                 notedocs=None,
+                 docsfile=None,
+                 width=0,
+                 configfiles=None,
+                 sections=None,
+                 helpoption=StandardHelpOption,
+                 longhelpoption=StandardLongHelpOption,
+                 versionoption=StandardVersionOption,
+                 settingsoption=StandardSettingsOption):
         """
         ARGS:
         main = None <str>:
@@ -712,7 +712,7 @@ class tui:
 
         if main:
             mainmodule_dir, mainmodule = os.path.split(main)
-            if mainmodule == '__init__.py':
+            if mainmodule.startswith('__init__.py'):
                 sys.path.insert(0, os.path.dirname(mainmodule_dir))
                 mainmodule = os.path.split(mainmodule_dir)[1]
             else:
