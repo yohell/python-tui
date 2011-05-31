@@ -28,7 +28,7 @@ right from the start and use the magical initprog() feature, like so:
 __version__ = "0.1.0"
 if __name__ == '__main__':
     from tui import tui
-    o = tui(progname='MooseCounter', main=__file__)
+    o = tui(main=__file__, progname='MooseCounter')
     o.initprog()
 
 Save and execute your moose counter with no arguments, and voila: usage 
@@ -39,11 +39,12 @@ way.
 
 A quick note on using main=__file__:
 Doing this is handy because it enables tui to find any .cfg or .docs files
-you want to distribute with your program, however if you do not supply a 
-version str, tui will attempt to import the module and read the __version__
-attribute (if present), so if you are planning to use this feature, make 
-sure your script can be imported without side effects. But as this is 
-standard python coding practice, you should probably be doing this already!
+you want to distribute with your program, and find defaults for progname, 
+command, versionstr and so on. However, if supplied, tui will attempt to 
+import the module and read the __version__ and __doc__ attributes, so if 
+you are planning to use this feature, make sure your script can be imported
+without side effects. But as this is standard python coding practice, you 
+should probably already be doing this anyway!
 
 Now you can go on to adding more options to your moose counter. Just stick 
 some o.makeoption() and o.makeposarg() clauses between the last two lines 
@@ -102,7 +103,7 @@ THE SOFTWARE.
 
 """
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 __copyright__ = "Copyright (c) 2011 Joel Hedlund."
 __license__ = "MIT"
 
@@ -163,30 +164,47 @@ class BadArgumentError(ParseError):
     template = "%s is not an acceptable argument for %s (%s)."
     def __init__(self, *args):
         """Instantiate with (name, value, details) or (message)."""
-        ParseError(self, *args)
+        ParseError.__init__(self, *args)
 
 class BadNumberOfArgumentsError(ParseError):
     """Raised when an Option has been given the wrong number of arguments."""
     template = "%s requires %s arguments and was given %s."
     def __init__(self, *args):
         """Instantiate with (name, required, supplied) or (message)."""
-        ParseError(self, *args)
+        ParseError.__init__(self, *args)
 
 class InvalidOptionError(ParseError):
     """Raised on attempts to access nonexisting options."""
         
 class OptionRecurrenceError(ParseError):
     """Raised on multiple use of single use options."""
-    
     template = "The option %s can only be used once in an argument list."
-    def __init__(self, option):
-        """Instantiate with option name."""
+    def __init__(self, *args, **kw):
+        """Instantiate with option name or message=... keyword argument."""
+        if args and kw.get('message', None):
+            raise ValueError('cannot use custom and default message at the same time')
+        ParseError.__init__(self, *args)
+        self.message = kw.get('message', None)
     
     def __str__(self):
-        return self.template % self.args
+        if self.message:
+            return self.message
+        return ParseError.__str__(self)
 
 class ReservedOptionError(ParseError):
     """Raised when command line reserved options are used in a config file."""
+    template = "The option %s is reserved for command line use."
+    def __init__(self, *args, **kw):
+        """Instantiate with option name or message=... keyword argument."""
+        if args and kw.get('message', None):
+            raise ValueError('cannot use custom and default message at the same time')
+        ParseError.__init__(self, *args)
+        self.message = kw.get('message', None)
+    
+    def __str__(self):
+        if self.message:
+            return self.message
+        return ParseError.__str__(self)
         
 class BadAbbreviationBlockError(ParseError):
     """Raised when poorly composed abbreviation blocks are encountered.
@@ -198,7 +216,7 @@ class BadAbbreviationBlockError(ParseError):
     template = "Option %s in the abbreviation block %s is illegal (%s)."
     def __init__(self, *args):
         """Instantiate with (abbreviation, block, details) or (message)."""
-        ParseError(self, *args)
+        ParseError.__init__(self, *args)
 
 # Option creation errors
 
@@ -599,10 +617,10 @@ class tui:
         ARGS:
         main = None <str>:
             Full path to the executed script. Will be used to determine 
-            defaults for command, versionstr and default search paths for 
-            docsfile and configfiles. Note that the module will be imported
-            to check the __version__ attribute, so it should know better 
-            than to do anything nasty on import. 
+            defaults for command, progname, versionstr and default search 
+            paths for docsfile and configfiles. Note that the module will 
+            be imported to check the __version__ attribute, so it should 
+            know better than to do anything nasty on import. 
         progname = 'ChangeThisProgramName' <str>:
             The user friendly name of the program. Used for the doc string
             formatter %(progname)s.
@@ -732,6 +750,10 @@ class tui:
                 progname = mainmodule.capitalize()
             if docsfile is None:
                 docsfile = os.path.join(mainmodule_dir, mainmodule + '.docs')
+            if configfiles is None:
+                configfiles = [os.path.join(mainmodule_dir, mainmodule + '.cfg'),
+                               os.path.join('/etc/', '%(command)s.cfg'),
+                               os.path.join(os.path.expanduser('~'), '.%(command)s')]
         self.dssDocVars = {'progname': progname,  'programmer': programmer,
                            'version': versionstr, 'command': command}
         self.sTitle = title
@@ -774,13 +796,9 @@ class tui:
                 docsfile = ''
         self.sDocsFile = docsfile
         if configfiles is None:
-            configfiles = []
-            if main:
-                configfiles.append(os.path.join(os.path.splitext(main)[0] + '.cfg'))
-            else:
-                configfiles.append(os.path.join(sys.path[0], '%(command)s.cfg'))
-            configfiles += [os.path.join('/etc/', '%(command)s.cfg'),
-                            os.path.join(os.path.expanduser('~'), '.%(command)s')]
+            configfiles = [os.path.join(sys.path[0], '%(command)s.cfg'),
+                           os.path.join('/etc/', '%(command)s.cfg'),
+                           os.path.join(os.path.expanduser('~'), '.%(command)s')]
         elif isinstance(configfiles, str):
             configfiles = [configfiles]
         self.lsConfigFiles = configfiles

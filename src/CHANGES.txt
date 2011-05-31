@@ -6,6 +6,24 @@ Changelog
 tui
 ===
 
+v1.3.0
+------
+* tui init now tries to determine defaults for command, progname, description, 
+	versionstr, docsfile and configfiles from the 'main', keyword argument. It 
+	does this by importing it, so application programmers should make sure it 
+	does not do anything nasty on import before using this functionality. But 
+	then again, if you are in the habit of writing python code that does nasty
+	things on import your feet are probably already chock full of bullets 
+	anyway so a couple more should not make any noticeable difference. 
+* General code cleanup to be more python coding style guide compliant.
+* Exceptions no longer use .sMessage.
+* Exceptions can now be instantiated either with multiple args which are used 
+	to format a standard error message, or with a single custom error message. 
+	Exceptions that only take one formatter arg instead use the message keyword
+	argument for this purpose.
+  
+
+
 v1.1.1
 ------
 
