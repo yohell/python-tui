@@ -89,16 +89,23 @@ class BadArgumentError(FormatError):
     def details(self):
         return self.sDetails
 
+def default_presenter(value):
+    s = str(value)
+    for c in s:
+        if c.isspace():
+            return repr(s)
+    return s
 
+_UNSET = []
 class Format:
     """\
     A data format for an Option.
 
     """
-
-    def __init__(self, shortname, parser, presenter = repr, nargs = 1, docs = '',
+    default = None
+    def __init__(self, shortname, parser, presenter = default_presenter, nargs = 1, docs = '',
                  acceptemptystring = False, acceptedspecials = None,
-                 pargs = None, kwargs = None, addspecialsdocs = True):
+                 pargs = None, kwargs = None, addspecialsdocs = True, default = _UNSET):
         """\
         Instantiate a Format object. 
         IN:
@@ -187,6 +194,8 @@ class Format:
             kwargs = {}
         self.dsxKWArgs = kwargs
         
+        if default is not _UNSET:
+            self.default = default
 
 
     def __str__(self):
@@ -303,9 +312,7 @@ class Format:
             sValue = " " .join(map(self.cPresenter, value))
         else:
             sValue = self.cPresenter(value, *self.lxPArgs, **self.dsxKWArgs)
-        return "%s(%s)" % (self.sShortName, sValue)
-
-
+        return sValue
 
     def nargs(self):
         return self.iNArgs
@@ -323,7 +330,7 @@ class Flag(Format):
     case insensitive.
     
     """
-
+    default = False
     def __init__(self, commandline_value = True,
                  acceptemptystring = False, acceptedspecials = None):
         """\
@@ -344,7 +351,7 @@ class Int(Format):
     A format that accept one integer value.
 
     """
-    
+    default = 0
     def __init__(self, acceptemptystring = False, acceptedspecials = None):
         """\
         Instantiate an Int Format object.
@@ -367,6 +374,7 @@ class PositiveInt(Format):
     A format that accepts one positive integer value.
 
     """
+    default = 0
     def __init__(self, acceptemptystring = False, acceptedspecials = None):
         """\
         Instantiate a PositiveInt Format object.
@@ -394,6 +402,7 @@ class NonnegativeInt(Format):
     A format that accepts one positive integer value.
 
     """
+    default = 1
     def __init__(self, acceptemptystring = False, acceptedspecials = None):
         """\
         Instantiate a PositiveInt Format object.
@@ -421,6 +430,7 @@ class BoundedInt(Format):
     A format that accepts one integer value in a given interval
 
     """
+    default = 0
     def __init__(self, lowerbound = None, upperbound = None,
                  acceptemptystring = False, acceptedspecials = None):
         """\
@@ -471,6 +481,7 @@ class Float(Format):
     A format that accepts one Float value.
 
     """
+    default = 0.0
     def __init__(self, formatter = None, acceptemptystring = False,
                  acceptedspecials = None):
         """\
@@ -505,6 +516,7 @@ class BoundedFloat(Format):
     A format that accepts one integer value in a given interval
 
     """
+    default = 0.0
     def __init__(self, lowerbound = None, upperbound = None, formatter = None,
                  acceptemptystring = False, acceptedspecials = None):
         """\
@@ -568,6 +580,7 @@ class NonnegativeFloat(Format):
     A format that accepts one integer value in a given interval
 
     """
+    default = 0.0
     def __init__(self, formatter = None, acceptemptystring = False,
                  acceptedspecials = None):
         """\
@@ -610,6 +623,7 @@ class FloatPercentage(Format):
     A format that accepts one Float value between 0.0 and 100.0.
 
     """
+    default = 0.0
     def __init__(self, acceptemptystring = False, acceptedspecials = None,
                  formatter = None):
         """\
@@ -647,17 +661,18 @@ class FloatPercentage(Format):
 
 
         
-class Str(Format):
+class String(Format):
     """\
     A format that accepts one String value.
 
     """
+    default = ''
     def __init__(self):
         """\
         Instantiate a Float Format object.
 
         """
-        Format.__init__(self, 'Str', str)
+        Format.__init__(self, 'String', str)
 
 
 
@@ -819,7 +834,7 @@ class Choice(Format):
 
 class RegEx(Format):
     """A format that accepts a regular expression."""
-    
+    default = ''
     def __init__(self, acceptemptystring=None, acceptedspecials=None, flags=0):
         """flags should be an integer and is passed to re.compile. It can 
         also be a string of one or more of the letters 'iLmsux' (the short 
@@ -834,7 +849,7 @@ class RegEx(Format):
         Format.__init__(self, 
                         shortname='RegEx', 
                         parser=re.compile, 
-                        presenter=lambda r: repr(r.pattern) if r else "''", 
+                        presenter=lambda r: repr(r.pattern) if r else '', 
                         docs=docs,
                         acceptemptystring=acceptemptystring, 
                         acceptedspecials=acceptedspecials)

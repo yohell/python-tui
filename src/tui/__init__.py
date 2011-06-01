@@ -56,8 +56,8 @@ __version__ = "0.1.0"
 if __name__ == '__main__':
     from tui import tui, formats
     o = tui.tui(main=__file__, progname='MooseCounter')
-    o.makeoption('horn-points', formats.BoundedInt(lowerbound=1), '13')
-    o.makeoption('weight', formats.Float, '450.0', 'w')
+    o.makeoption('horn-points', formats.BoundedInt(lowerbound=1), 'p', 13)
+    o.makeoption('weight', formats.Float, 'w', 450.0)
     o.makeposarg('observation_data', formats.ReadableFile)
     o.makeposarg('result_file', formats.WritableFile)
     o.initprog()
@@ -244,15 +244,15 @@ class PositionalArgumentError(DeveloperError):
 class DocumentationError(DeveloperError):
     """Raised on errors in parsing documentation files."""
         
-
+_UNSET = []
 class Option:
     """A program option."""
     
     def __init__(self, 
                  name, 
                  format, 
-                 default, 
                  abbreviation='', 
+                 default=_UNSET, 
                  reserved=False, 
                  docs='', 
                  recurring=False):
@@ -295,16 +295,12 @@ class Option:
         if isinstance(format, type(formats.Format)):
             format = format()
         self.oFormat = format
-        try:
-            xValue = self.oFormat.parsestr(default)
-        except formats.BadNumberOfArgumentsError, e:
-            raise BadNumberOfArgumentsError('--' + name, e.required(), e.supplied())
-        except formats.BadArgumentError, e:
-            raise BadArgumentError('--' + name, e.argument(), e.details())
-        if recurring:
-            self.xValue = [xValue]
-        else:
-            self.xValue = xValue
+        if default is _UNSET:
+            if recurring:
+                default = []
+            else:
+                default = format.default
+        self.xValue = default
         if abbreviation and len(abbreviation) != 1:
             raise ValueError("Option abbreviations must be strings of length 1.")
         if abbreviation and not re.match(sOptionAbbreviationRE, abbreviation):
@@ -319,9 +315,6 @@ class Option:
             self.sDocs = self.oFormat.docs()
         self.bAllowRecurrence = recurring
         self.sLocation = "Builtin default."
-
-    def __str__(self):
-        return self.str()
 
     def parse(self, args, usedname, location):
         """Consume and process arguments and store the result.
@@ -373,7 +366,10 @@ class Option:
         self.sLocation = location
 
     def strvalue(self):
-        return self.oFormat.strvalue(self.xValue)
+        value = self.xValue
+        if not self.bAllowRecurrence:
+            value = [value]
+        return ', '.join(self.oFormat.strvalue(v) for v in value)
 
     def formatname(self):
         return self.oFormat.shortname()
@@ -408,26 +404,26 @@ class Option:
 class StandardHelpOption(Option):
     """A standard help option."""
     def __init__(self):
-        Option.__init__(self, 'help', formats.Flag, 'False', 'h', True,
-                        'Print command line help and exit.')
+        Option.__init__(self, 'help', formats.Flag, 'h', reserved=True,
+                        docs='Print command line help and exit.')
 
 class StandardLongHelpOption(Option):
     """A standard long help option."""
     def __init__(self):
-        Option.__init__(self, 'HELP', formats.Flag, 'False', 'H', True,
-                        'Print verbose help and exit.')
+        Option.__init__(self, 'HELP', formats.Flag, 'H', reserved=True,
+                        docs='Print verbose help and exit.')
 
 class StandardVersionOption(Option):
     """A standard version option."""
     def __init__(self):
-        Option.__init__(self, 'version', formats.Flag, 'False', 'V', True,
-                        'Print version string and exit.')
+        Option.__init__(self, 'version', formats.Flag, 'V', reserved=True,
+                        docs='Print version string and exit.')
 
 class StandardSettingsOption(Option):
     """A standard settings option."""
     def __init__(self):
-        Option.__init__(self, 'settings', formats.Flag, 'False', 'S', True,
-                        'Print settings summary and exit.')
+        Option.__init__(self, 'settings', formats.Flag, 'S', reserved=True,
+                        docs='Print settings summary and exit.')
 
 class PositionalArgument:
     """A positional command line program parameter."""
@@ -876,8 +872,8 @@ class tui:
     def makeoption(self, 
                    name, 
                    format, 
-                   default, 
                    abbreviation='',
+                   default=_UNSET, 
                    reserved=False, 
                    docs='', 
                    recurring=False):
@@ -912,7 +908,7 @@ class tui:
         This method is a convenience method for .addoption(tui.Option(...))
 
         """
-        o = Option(name, format, default, abbreviation, reserved, docs, recurring)
+        o = Option(name, format, abbreviation, default, reserved, docs, recurring)
         self.addoption(o)
 
     def appendposarg(self, posarg):
@@ -1214,7 +1210,9 @@ class tui:
             if o.abbreviation():
                 sTags += ', -' + o.abbreviation()
             sTags += ': '
-            sHelp = "%s. %s" % (o.strvalue(), o.docs())
+            print o.sName, o.xValue, o.recurring()
+            print o.strvalue() 
+            sHelp = "%s(%s). %s" % (o.oFormat.shortname(), o.strvalue(), o.docs())
             if len(sTags) > iHelpIndent:
                 ls = textwrap.wrap(sHelp, width = width, initial_indent = sI, subsequent_indent = sI)
                 lsOut.append(sTags)
@@ -1608,7 +1606,7 @@ class tui:
         for sOption in self.lsOptionOrder:
             o = self.dsoOptions[sOption]
             sTag = '%*s%s: ' % (indent, ' ', o.name())
-            sSettings = "%s: %s" % (o.strvalue(), o.location())
+            sSettings = "%s(%s): %s" % (o.oFormat.sShortName, o.strvalue(), o.location())
             if len(sTag) > iIndent:
                 ls = textwrap.wrap(sSettings, width=width, initial_indent=sI, subsequent_indent=sI)
                 lsOut.append(sTag)
@@ -1651,7 +1649,7 @@ class tui:
                  configfiles=None,
                  sections=None,
                  argv=None,
-                 showusageonnoargs=True,
+                 showusageonnoargs=False,
                  width=None,
                  helphint="Use with --help or --HELP for more information.\n"):
         """Do the usual stuff to initiallize the program.
