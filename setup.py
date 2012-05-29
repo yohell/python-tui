@@ -1,7 +1,7 @@
 from distutils.core import setup
 
 setup(name='tui',
-      version='1.1.1',
+      version='2.0',
       description='Quickly add a competent textual user interface to your python program.',
       platforms='OS Independent',
       author='Joel Hedlund',

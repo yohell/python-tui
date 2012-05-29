@@ -132,6 +132,7 @@ __all__ = ['BadAbbreviationBlockError',
 import docparser, formats
 import ConfigParser, os, re, sys, textwrap
 
+_UNSET = []
 ##################################################
 ##
 ## ERRORS
@@ -144,10 +145,16 @@ class UserInterfaceError(Exception):
 
     """
     template = None
+    format_message = lambda self, args: self.template % args
+    
+    def __init__(self, *args, **kw):
+        if args and kw.get('message', None):
+            raise ValueError('instantiate with either custom or default message')
+        self.args = args
+        self.message = kw.get('message', None) or self.format_message(args)
+        
     def __str__(self):
-        if len(self.args) > 1 and self.template is not None:
-            return self.template % self.args
-        return Exception.__str__(self)
+        return self.message
 
 # Argument parsing errors
 
@@ -155,68 +162,64 @@ class ParseError(UserInterfaceError):
     """Base class for exceptions raised while parsing option values.
     
     Should not be instantiated directly. Use a proper subclass instead.
-
     """
     
 class BadArgumentError(ParseError):
     """Raised when options get literals incompatible with their Format."""
     
     template = "%s is not an acceptable argument for %s (%s)."
-    def __init__(self, *args):
-        """Instantiate with (name, value, details) or (message)."""
-        ParseError.__init__(self, *args)
+
+    def __init__(self, *args, **kw):
+        """Instantiate with (name, value, details) or message=..."""
+        ParseError.__init__(self, *args, **kw)
 
 class BadNumberOfArgumentsError(ParseError):
     """Raised when an Option has been given the wrong number of arguments."""
+
     template = "%s requires %s arguments and was given %s."
-    def __init__(self, *args):
-        """Instantiate with (name, required, supplied) or (message)."""
-        ParseError.__init__(self, *args)
+    
+    def __init__(self, *args, **kw):
+        """Instantiate with (name, n_required, n_given) or message=..."""
+        ParseError.__init__(self, *args, **kw)
 
 class InvalidOptionError(ParseError):
     """Raised on attempts to access nonexisting options."""
+    
+    template = "The option %s does not exist."
+
+    def __init__(self, *args, **kw):
+        """Instantiate with (name) or message=..."""
+        ParseError.__init__(self, *args, **kw)
         
 class OptionRecurrenceError(ParseError):
     """Raised on multiple use of single use options."""
+
     template = "The option %s can only be used once in an argument list."
+
     def __init__(self, *args, **kw):
-        """Instantiate with option name or message=... keyword argument."""
-        if args and kw.get('message', None):
-            raise ValueError('cannot use custom and default message at the same time')
-        ParseError.__init__(self, *args)
-        self.message = kw.get('message', None)
-    
-    def __str__(self):
-        if self.message:
-            return self.message
-        return ParseError.__str__(self)
+        """Instantiate with (name) or message=..."""
+        ParseError.__init__(self, *args, **kw)
 
 class ReservedOptionError(ParseError):
     """Raised when command line reserved options are used in a config file."""
+
     template = "The option %s is reserved for command line use."
+
     def __init__(self, *args, **kw):
-        """Instantiate with option name or message=... keyword argument."""
-        if args and kw.get('message', None):
-            raise ValueError('cannot use custom and default message at the same time')
-        ParseError.__init__(self, *args)
-        self.message = kw.get('message', None)
-    
-    def __str__(self):
-        if self.message:
-            return self.message
-        return ParseError.__str__(self)
+        """Instantiate with (name) or message=..."""
+        ParseError.__init__(self, *args, **kw)
         
 class BadAbbreviationBlockError(ParseError):
     """Raised when poorly composed abbreviation blocks are encountered.
     
     For example if options that require value arguments occurs anywhere
     except last in the block.
-
     """
     template = "Option %s in the abbreviation block %s is illegal (%s)."
-    def __init__(self, *args):
-        """Instantiate with (abbreviation, block, details) or (message)."""
-        ParseError.__init__(self, *args)
+
+    def __init__(self, *args, **kw):
+        """Instantiate with (abbreviation, block, details) or message=..."""
+        ParseError.__init__(self, *args, **kw)
 
 # Option creation errors
 
@@ -290,7 +293,7 @@ class Option:
         if not re.match(sOptionNameRE, name):
             sErrorMsg = "Invalid name (does not match %s)."
             sErrorMsg %= repr(sOptionNameRE)
-            raise OptionError(sErrorMsg)
+            raise OptionError(message=sErrorMsg)
         self.sName = name
         if isinstance(format, type(formats.Format)):
             format = format()
@@ -306,7 +309,7 @@ class Option:
         if abbreviation and not re.match(sOptionAbbreviationRE, abbreviation):
             sErrorMsg = "Invalid abbreviation (does not match %s)."
             sErrorMsg %= repr(sOptionAbbreviationRE)
-            raise OptionError(sErrorMsg)
+            raise OptionError(message=sErrorMsg)
         self.sAbbreviation = abbreviation
         self.bReserved = reserved
         if docs:
@@ -452,7 +455,7 @@ class PositionalArgument:
         if not re.match(sNameRE, name):
             sErrorMsg = "Invalid name (does not match %s)."
             sErrorMsg %= repr(sNameRE)
-            raise PositionalArgumentError(sErrorMsg)
+            raise PositionalArgumentError(message=sErrorMsg)
         self.sName = name
         if isinstance(format, type(formats.Format)):
             format = format()
@@ -859,11 +862,11 @@ class tui:
         if sName in self.dsoOptions:
             sErrorMsg = "The name %s is already used by a previosly added option."
             sErrorMsg %= repr(sName)
-            raise OptionError(sErrorMsg)
+            raise OptionError(message=sErrorMsg)
         if sAbbreviation and sAbbreviation in self.dsoAbbreviations:
             sErrorMsg = "The abbreviation %s is already used by the previosly added option %s."
             sErrorMsg %= (repr(sAbbreviation), repr(self.dsoAbbreviations[sAbbreviation].name()))
-            raise OptionError(sErrorMsg)
+            raise OptionError(message=sErrorMsg)
         self.dsoOptions[option.name()] = option
         if sAbbreviation:
             self.dsoAbbreviations[sAbbreviation] = option
@@ -1010,14 +1013,14 @@ class tui:
             if not sOption in self.dsoOptions:
                 sErrorMsg = "The option %s does not exist."
                 sErrorMsg %= repr(sOption)
-                raise DocumentationError(sErrorMsg)
+                raise DocumentationError(message=sErrorMsg)
             self.dsoOptions[sOption].setdocs(sDocs % self.dssDocVars)
         lsPosArgs = map(lambda x: x.name(), self.loPositionalArgs)
         for sPosArg, sDocs in oDocs.arguments().iteritems():
             if not sPosArg in lsPosArgs:
                 sErrorMsg = "The positional argument %s does not exist."
                 sErrorMsg %= repr(sPosArg)
-                raise DocumentationError(sErrorMsg)
+                raise DocumentationError(message=sErrorMsg)
             self.loPositionalArgs[lsPosArgs.index(sPosArg)].setdocs(sDocs % self.dssDocVars)
         for sFile, lsDocs in oDocs.files().iteritems():
             self.setfiledocs(sFile, lsDocs)
@@ -1087,13 +1090,13 @@ class tui:
                     if sUnusedOption not in self.dsoOptions:
                         sErrorMsg = "The option %s in section [%s] of file %s does not exist."
                         sErrorMsg %= (repr(sUnusedOption), sSection, repr(sFile))
-                        raise InvalidOptionError(sErrorMsg)
+                        raise InvalidOptionError(message=sErrorMsg)
                 for sOption in o.options(sSection):          
                     if sOption in self.dsoOptions:
                         if self.dsoOptions[sOption].reserved():
                             sErrorMsg = "The option %s in section [%s] of file %s is reserved for command line use."
                             sErrorMsg %= (repr(sUnusedOption), sSection, repr(sFile))
-                            raise ReservedOptionError(sErrorMsg)
+                            raise ReservedOptionError(message=sErrorMsg)
                         sValue = o.get(sSection, sOption)
                         self.dsoOptions[sOption].parsestr(sValue, sOption, '%s [%s]' % (repr(sFile), sSection))
 
@@ -1116,7 +1119,7 @@ class tui:
                     break
                 if not sOption[2:] in self.dsoOptions:
                     sErrorMsg = "The option %s does not exist." % sOption
-                    raise InvalidOptionError(sErrorMsg)
+                    raise InvalidOptionError(message=sErrorMsg)
                 oOption = self[sOption[2:]]
                 if not oOption.recurring():
                     if oOption in loObservedNonRecurringOptions:
@@ -1157,7 +1160,7 @@ class tui:
         if lsArgs:
             sErrorMsg = 'This program accepts exactly %s positional arguments (%s given).'
             sErrorMsg %= (len(self.loPositionalArgs), len(self.loPositionalArgs) + len(lsArgs))
-            raise PositionalArgumentError(sErrorMsg)
+            raise PositionalArgumentError(message=sErrorMsg)
             
     def parseargs(self, argv=None, location=''):
         """Parse an argument vector.
@@ -1210,8 +1213,6 @@ class tui:
             if o.abbreviation():
                 sTags += ', -' + o.abbreviation()
             sTags += ': '
-            print o.sName, o.xValue, o.recurring()
-            print o.strvalue() 
             sHelp = "%s(%s). %s" % (o.oFormat.shortname(), o.strvalue(), o.docs())
             if len(sTags) > iHelpIndent:
                 ls = textwrap.wrap(sHelp, width = width, initial_indent = sI, subsequent_indent = sI)

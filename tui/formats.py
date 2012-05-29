@@ -738,6 +738,7 @@ class ReadableDir(Format):
     A format that accepts one readable directory.
 
     """
+    default = '.'
     def __init__(self, acceptemptystring = False, acceptedspecials = None):
         """\
         Instantiate a ReadableDir Format object.
@@ -768,6 +769,7 @@ class WritableDir(Format):
     created if possible.
 
     """
+    default = '.'
     def __init__(self, acceptemptystring = False, acceptedspecials = None):
         """\
         Instantiate a Float Format object. 
