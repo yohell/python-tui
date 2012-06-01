@@ -2,83 +2,241 @@
 
 Author: Joel Hedlund <yohell@ifm.liu.se>
 
-TUI is straightforward to use, both for developes and users. It can parse 
+TUI is straightforward to use, both for developers and users. It can parse 
 options from multiple config files and command line, and can produce 
 constructive error messages given bad input. It can also help keep the 
 source code clean by moving help text to a separate documentation file.
 
 If you have problems with this package, please contact the author.
 
-GETTING STARTED:
-Typically, you will need to import the tui class and some format classes 
-from the tui.formats module. The tui.docparser module has documentation on how 
-to write tui-compatible documentation files, but you won't likely need 
-anything else from there. You probably won't ever have to use anything from 
-the TextBlockParser module.
+QUICKSTART:
+Put myprog.docs in install_dir (possibly also .conf), and then write myprog: 
+------------------------------------------------------------------------------
+#!/usr/bin/env python
+'''MyProgram 
+A one line description of my program goes here.
 
-HOWTO:
-Let's pretend we're making a moose counter. First, we create the script 
-file 'moosecounter.py', a docs file 'moosecounter.docs' and a config file
-'moosecounter.cfg' in the same dir. Leave the latter two empty and start 
-editing the scriptfile.
+You can put any amount of text in the rest of this docstring, and it will be 
+ignored by get_metainfo(), however certain keywords are detected:
 
-Instantiate a textual user interface object and give it the proper name 
-right from the start and use the magical initprog() feature, like so:
-
+Version:   If you like, but it's better to put it in __version__ below.  
+Website:   http://www.example.com
+Download:  http://www.example.com/download
+Author:    Joel Hedlund <yohell@ifm.liu.se>
+Contact:   Please contact the author.
+Copyright: Copyright blurb.
+License:   Name of the license.
+#Version:  Using __version__ is probably better. Commented this out for now.
+'''
 __version__ = "0.1.0"
+import sys
+import mypackage
+def main(argv=sys.argv):
+    from tui import (BadArgument, formats, get_metainfo, tui)
+    ui = tui(version=__version__,
+             install_dir=mypackage,
+             ignore=['squeegees'],
+             **get_metainfo(__file__))
+    ui.makeoption('quiet', 'Flag', 'q') 
+    ui.makeoption('verbosity', 'Int', 'v', default=10)
+    ui.makeoption('job-tag', 'String', recurring=True)
+    ui.makeposarg('in-file', formats.ReadableFile(special={'-':sys.stdin}))
+    ui.makeposarg('out-file', formats.WritableFile, optional=True)
+    ui.launch()
+    # Any additional custom parameter checking/tweaking:
+    if ui['verbosity'] == 9000:
+        ui.graceful_exit(BadArgument(ui, 'verbosity', 'way too chatty'))
+    if ui['verbosity'] == 8000:
+        # Tweak stuff if needed
+        ui['verbosity'] = 16000
+    if ui['in-file'] and open(ui['in-file']).read() == 'bad content':
+        ui.graceful_exit('custom error message')
+    return mypackage.do_stuff(**ui.dict())
 if __name__ == '__main__':
-    from tui import tui
-    o = tui(main=__file__, progname='MooseCounter')
-    o.initprog()
+    sys.exit(main() or 0)
+------------------------------------------------------------------------------
 
-Save and execute your moose counter with no arguments, and voila: usage 
-instructions! Execute it with the --HELP flag, and voila: verbose program 
-information, including syntax help for the config file! The config files 
-are meant to be used by your users to configure your program with, by the 
-way.
+We're pretty much done here, but if you feel like it, put this in myprog.docs:
+------------------------------------------------------------------------------
+PARAMETER: quiet
+Suppress all normal output through speakers.
 
-A quick note on using main=__file__:
-Doing this is handy because it enables tui to find any .cfg or .docs files
-you want to distribute with your program, and find defaults for progname, 
-command, versionstr and so on. However, if supplied, tui will attempt to 
-import the module and read the __version__ and __doc__ attributes, so if 
-you are planning to use this feature, make sure your script can be imported
-without side effects. But as this is standard python coding practice, you 
-should probably already be doing this anyway!
+PARAMETER: verbosity
+Level of chatter, less is more.
 
-Now you can go on to adding more options to your moose counter. Just stick 
-some o.makeoption() and o.makeposarg() clauses between the last two lines 
-in the example above. You will probably also need to import some formats 
-for your options from the formats module in this package. For example you 
-can do something like this:
+PARAMETER: in-file
+What data file to read, in some format. 
 
-__version__ = "0.1.0"
-if __name__ == '__main__':
-    from tui import tui, formats
-    o = tui.tui(main=__file__, progname='MooseCounter')
-    o.makeoption('horn-points', formats.BoundedInt(lowerbound=1), 'p', 13)
-    o.makeoption('weight', formats.Float, 'w', 450.0)
-    o.makeposarg('observation_data', formats.ReadableFile)
-    o.makeposarg('result_file', formats.WritableFile)
-    o.initprog()
+PARAMETER: squeegees
+This parameter is not used by myprog but a sibling program in the same suite.
+
+GENERAL:
+General info on how to use %(progname)s.
+
+ADDITIONAL:
+You can use docvars in docsfiles, e.g: %(progname)s v%(version)s by 
+%(author)s is started using %(command)s. # This comment will be removed.
+Since these lines have the same indent, they will be concatenated into a 
+single paragraph, and later linewrapped to the user's current terminal width.
+# This line is ignored.
+This is a literal hash char \# in the last sentence in the first paragraph. 
+
+This is a new paragraph, with a bullet list:
+ * End paragraphs with backslash \
+ * to indicate that next line with same indent \
+ * is a new paragraph with same indent.
+
+FILE: /etc/%(command)s/%(command)s-hosts.conf
+Documentation on program specific file.
+------------------------------------------------------------------------------
+
+And if you like, something like this in myprog.conf:
+------------------------------------------------------------------------------
+# This is a comment. The DEFAULT section (always uppercase) is always read.
+[DEFAULT]
+# There is no 'server' option but you can do this to set other vars, see below.
+server = liu.se
+# The squeegee option is ignored in myprog, probably used by a sibling prog.
+squeegee = moo
+
+[myprog]
+# This sets job-tag to liu.se/index.html
+job-tag = %(server)s/index.html
+# Use on,yes,true,1 or off,no,false,0 to set values for flags.  
+quiet = no 
+
+[myotherprog]
+# This section is ignored by myprog, which only reads its own sections.
+------------------------------------------------------------------------------
+
+Then, on the command line:
+$ myprog # Print short usage message.
+$ myprog -h (or --help) # Print help message.
+$ myprog -H (or --HELP) # Print more verbose help message.
+$ myprog -V (or --version) # Print version.
+$ myprog -S (or --settings) # Print settings and origin: builtin/file/cmdline.
+$ myprog --job-tag a --job-tag b -q -v 14 # Up to you!
+
+In the latter case .launch() gives you:
+ui['quiet'] == True
+ui['job-tag'] == ['liu.se/index.html', 'a', 'b'] # A list since it's recurring.
+ui['in-file'] == None # since it's optional and the user gave no arg for it. 
 
 
-After you have saved you can execute your moose counter in same manner as 
-before and see your new options turn up in the help screens. You are highly
-encouraged to document the program and its options better, and your docs 
-file is the place to do it. Check the help for the tui.docparser module for
-the syntax. 
+DETAILS:
+As much as possible of the tui documentation has been pushed to __doc__ strings
+for individual modules, functions, classes and methods, but here are some nice
+entry points:
 
-OK, so that's a handful of lines of code that take care of all the boring 
-old run of the mill config file and parameter parsing and help screen 
-generation, and now you're free to write code that actally counts mooses. 
-Use o.options() to return a dict of options and values, and o.posargs() to 
-get a list of values for all positional arguments.
+The tui class is the main workhorse that holds all program info, knows how to
+parse docs, config and command line parameters, and how to present all this
+info to the user. Instantiate with metainfo (see get_metainfo() docstring syntax just 
+below), add options and positional arguments with .makeoption() and 
+.makeposarg(), and make the magic happen with
+.launch(). .launch() will find and import program documentation from 
+docsfiles, find and read configuration from various configfiles, parse command
+line parameters, exit with helpful error messages on parameter format errors 
+(like when the user types 'monkey' when the program expects a number, or gives
+a read-only file to write results to, and so on), and finally it will react to
+some ueful options (--help, --HELP, --version and --settings, see the example 
+just above). You can of course customize all this, or avoid calling .launch() 
+alltogether. Read method and class docs to see how it's done.
 
-FURTHER READING:
-See the separate help docs on each individual module, class and method.
+
+The format classes in the tui.formats module know how to take user supplied
+strings and transform them into validated values usable in your program, for
+examples: Int, ReadableFile, WritableDir, Choice, Flag, RegEx, and so on.
+You can also write your own formats and add to your tui instance. Use 
+existing formats as examples for that.
+
+
+CONFIGFILE SYNTAX:
+tui uses the ConfigParser file structure (see python docs), but case sensitive.
+Thus the default section is [DEFAULT] (always uppercase).
+
+
+GET_METAINFO() DOCSTRING SYNTAX:
+If you've written your program __doc__ string right there is probably a lot of 
+of useful program metainfo in there, which you could probably pull out using 
+some simple string mangling tricks and feed to tui directly. get_metainfo() is 
+a simple helper that can help you do this as long as you take care writing your
+docstring carefully. By default, it will return a metainfo dict with keys  
+'author', 'command', 'contact', 'copyright', 'description', 'download', 
+'progname', 'version' and 'website'. 
+
+The docstring needs to be multiline and the closing quotes need to be first 
+on a line, optionally preceeded by whitespace. 
+
+Command is assumed to be splitext(basename(scriptfile))[0] (from os.path).
+
+The first non-whitespace line is re.search'ed using first_line_pattern, 
+default e.g (version optional, contains no whitespace): PROGNAME [vVERSION]
+
+The next non-whitespace, non-keyword line is expected to be the program 
+description.
+
+See python code above for a syntax example, and function docstring below for 
+customisation details. This function will only make minimal efforts to succeed. 
+If it doesn't fit your style: roll your own. It's really not that hard!
+
+
+DOCSFILE SYNTAX:
+Docsfiles are written as blocks, which start with a tag line followed by one or
+more lines of text. Tags can be any of:
+
+TAG          TYPE                   NAME
+ADDITIONAL:  [multiple paragraphs]  additional
+CONTACT:     [multiple paragraphs]  contact
+COPYRIGHT:   [multiple paragraphs]  copyright
+DESCRIPTION: [single paragraph]     description
+GENERAL:     [multiple paragraphs]  general
+TITLE:       [single paragraph]     title
+USAGE:       [single paragraph]     usage
+
+Additionally, these labelled blocks are available:
+PARAMETER:   [single paragraph]     parameters
+FILE:        [multiple paragraphs]  files
+
+which also require a label on the tag line (see examples above).
+
+The PARAMETER block is used for both program options and positional 
+parameters (so you can change type for parameters in code without having to 
+update the docsfile as well).
+
+All blocks can use documentation variables (docvars) using python string 
+formatting, e.g: %(author)s, %(command)s, %(progname)s and %(version)s. This 
+also works for FILE: labels (see examples above).
+
+In single paragraph blocks, all text is concatenated into a single string, with 
+newlines and blank lines converted to a single space character. In multiple 
+paragraph blocks, all consecutive lines with the same indentation is 
+concatenated into single paragraph strings with the same indentation. 
+Consecutive lines with different indent will be stored as different paragraphs. 
+If you need to store consecutive lines with the same indent as different 
+paragraphs (for example for bulleted lists), end the preceding line with a 
+backslash character '\'. To avoid preserving blank lines in multiple paragraph 
+blocks, start the line with a comment character '#'.
+
+Anything following a '#' character on a line is disregarded as a comment.
+Use backslashes to escape # characters if you want to use them in text.
+Backslashes have no special meaning anywhere else, but if you feel an urge
+to have backslashes directly preceding hashes in your output, type twice as
+many as you want, plus one more to keep the hash character from becoming a 
+comment. Examples:   
+
+#       is a comment
+\#      is a hash character.
+\\#     is a backslash followed by comment.
+\\\\\#  is two backslashes and a hash character.
+\\\\\\# is three backslashes and a comment.
+...     you get the picture.
+
 
 COPYRIGHT: 
+Copyright (c) 2011 Joel Hedlund
+
+
+LICENSE:
 The MIT License
 
 Copyright (c) 2011 Joel Hedlund
@@ -103,15 +261,13 @@ THE SOFTWARE.
 
 """
 
-__version__ = "1.3.0"
-__copyright__ = "Copyright (c) 2011 Joel Hedlund."
+__version__ = "2.0.0"
+__copyright__ = "Copyright (c) 2012 Joel Hedlund."
 __license__ = "MIT"
 
-__all__ = ['BadAbbreviationBlockError',
-           'BadArgumentError',
-           'BadNumberOfArgumentsError',
-           'DeveloperError',
-           'DocumentationError',
+__all__ = ['BadAbbreviationBlock',
+           'BadArgument',
+           'BadNumberOfArguments',
            'InvalidOptionError',
            'Option',
            'OptionError',
@@ -124,92 +280,83 @@ __all__ = ['BadAbbreviationBlockError',
            'StandardLongHelpOption',
            'StandardSettingsOption',
            'StandardVersionOption',
-           'UserInterfaceError',
-           'docparser',
-           'formatstui',
+           'formats',
+           'tui',
            'textblockparser']
 
-import docparser, formats
-import ConfigParser, os, re, sys, textwrap
+import ConfigParser
+import fcntl
+import os
+import re
+import sys
+import struct
+import termios
+import textwrap
 
-_UNSET = []
-##################################################
-##
+import formats
+from textblockparser import (IndentedParagraphs,
+                             SingleParagraph,
+                             TextBlockParser)
+
+
+class TUIBase(object):
+    "Base class for tui.tui. Does nothing. Used only by tui exceptions."
+
 ## ERRORS
-##
 
-class UserInterfaceError(Exception):
-    """Base class for exceptions raised in the tui package.
-    
-    Should not be instantiated directly. Use a proper subclass instead.
-
-    """
+class ParseError(Exception):
+    """Base class for exceptions raised while parsing option values."""
     template = None
     format_message = lambda self, args: self.template % args
     
     def __init__(self, *args, **kw):
-        if args and kw.get('message', None):
-            raise ValueError('instantiate with either custom or default message')
         self.args = args
-        self.message = kw.get('message', None) or self.format_message(args)
+        self.message = kw.get('message') or self.format_message(args)
         
     def __str__(self):
         return self.message
 
-# Argument parsing errors
-
-class ParseError(UserInterfaceError):
-    """Base class for exceptions raised while parsing option values.
-    
-    Should not be instantiated directly. Use a proper subclass instead.
-    """
-    
-class BadArgumentError(ParseError):
+class BadArgument(ParseError):
     """Raised when options get literals incompatible with their Format."""
     
     template = "%s is not an acceptable argument for %s (%s)."
 
-    def __init__(self, *args, **kw):
-        """Instantiate with (name, value, details) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, value, name, details, message=None):
+        super(BadArgument, self).__init__(value, name, details, message=message)
 
-class BadNumberOfArgumentsError(ParseError):
-    """Raised when an Option has been given the wrong number of arguments."""
+class BadNumberOfArguments(ParseError):
+    """Raised when the user has supplied the wrong number of arguments."""
 
     template = "%s requires %s arguments and was given %s."
     
-    def __init__(self, *args, **kw):
-        """Instantiate with (name, n_required, n_given) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, n_required, name, n_given, message=None):
+        super(BadNumberOfArguments, self).__init__(name, n_required, n_given, message=message)
 
-class InvalidOptionError(ParseError):
+class InvalidOption(ParseError):
     """Raised on attempts to access nonexisting options."""
     
     template = "The option %s does not exist."
 
-    def __init__(self, *args, **kw):
-        """Instantiate with (name) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, name, message=None):
+        super(InvalidOption, self).__init__(name, message=message)
         
 class OptionRecurrenceError(ParseError):
     """Raised on multiple use of single use options."""
 
     template = "The option %s can only be used once in an argument list."
 
-    def __init__(self, *args, **kw):
-        """Instantiate with (name) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, name, message=None):
+        super(OptionRecurrenceError, self).__init__(name, message=message)
 
 class ReservedOptionError(ParseError):
     """Raised when command line reserved options are used in a config file."""
 
     template = "The option %s is reserved for command line use."
 
-    def __init__(self, *args, **kw):
-        """Instantiate with (name) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, name, message=None):
+        super(ReservedOptionError, self).__init__(name, message=message)
         
-class BadAbbreviationBlockError(ParseError):
+class BadAbbreviationBlock(ParseError):
     """Raised when poorly composed abbreviation blocks are encountered.
     
     For example if options that require value arguments occurs anywhere
@@ -217,112 +364,288 @@ class BadAbbreviationBlockError(ParseError):
     """
     template = "Option %s in the abbreviation block %s is illegal (%s)."
 
-    def __init__(self, *args, **kw):
-        """Instantiate with (abbreviation, block, details) or message=..."""
-        ParseError.__init__(self, *args, **kw)
+    def __init__(self, abbreviation, block, details, message=None):
+        super(BadAbbreviationBlock, self).__init__(abbreviation, block, details, message=message)
 
-# Option creation errors
+## Internal helpers
 
-class DeveloperError(UserInterfaceError):
-    """Raised on illegal creation or configuration of a tui instance.
-    
-    Should not be instantiated directly. Use a proper subclass instead.
-
-    """
-
-class OptionError(DeveloperError):
-    """Raised on failed Option creation.
-    
-    For example when trying to add two Options with the same name.
-
-    """
-
-class PositionalArgumentError(DeveloperError):
-    """Raised when PositionalArgument creation fails.
-    
-    For example when trying to add an argument that takes no value.
-
-    """
-
-class DocumentationError(DeveloperError):
-    """Raised on errors in parsing documentation files."""
-        
 _UNSET = []
-class Option:
+def _list(value, default=_UNSET):
+    if value is None:
+        if default is _UNSET:
+            return []
+        return default
+    if not isinstance(value, (list, tuple)):
+        return [value]
+    return value
+
+def _docs(text, docvars):
+    if not text:
+        return
+    if isinstance(text, basestring):
+        return [text % docvars]
+    if isinstance(text, dict):
+        return dict((name % docvars, _docs(text, docvars)) for name, text in text.items())
+    return [par % docvars for par in text]
+
+class DocParser(TextBlockParser):
+    """Read docsfiles for tui."""
+
+    def __init__(self, tabsize=4):
+        """
+        tabsize > 0 replaces tab characters with that many spaces. Set <= 0 to 
+        disable.
+        """
+        super(DocParser, self).__init__(untagged=None, tabsize=tabsize)
+        self.addblock('title', SingleParagraph)
+        self.addblock('description', SingleParagraph)
+        self.addblock('usage', SingleParagraph)
+        self.addblock('contact', IndentedParagraphs)
+        self.addblock('website', IndentedParagraphs)
+        self.addblock('download', IndentedParagraphs)
+        self.addblock('copyright', IndentedParagraphs)
+        self.addblock('license', IndentedParagraphs)
+        self.addblock('general', IndentedParagraphs)
+        self.addblock('additional', IndentedParagraphs)
+        self.addblock('parameters', SingleParagraph, True, 'PARAMETER')
+        self.addblock('files', IndentedParagraphs, True, 'FILE')
+
+class StrictConfigParser(ConfigParser.SafeConfigParser):
+    """A config parser that minimises the risks for hard-to-debug errors."""
+    
+    def optionxform(self, option):
+        """Strip whitespace only."""
+        return option.strip()
+
+    def unusedoptions(self, sections):
+        """Lists options that have not been used to format other values in 
+        their sections. 
+        
+        Good for finding out if the user has misspelled any of the options.
+        """
+        unused = set([])
+        for section in _list(sections):
+            if not self.has_section(section):
+                continue
+            options = self.options(section)
+            raw_values = [self.get(section, option, raw=True) for option in options]
+            for option in options:
+                formatter = "%(" + option + ")s"
+                for raw_value in raw_values:
+                    if formatter in raw_value:
+                        break
+                else:
+                    unused.add(option) 
+            return list(unused)
+
+def get_terminal_size(default_cols=80, default_rows=25):
+    """Return current terminal size (cols, rows) or a default if detect fails.
+
+    This snippet comes from color ls by Chuck Blake:
+    http://pdos.csail.mit.edu/~cblake/cls/cls.py
+
+    """
+    def ioctl_GWINSZ(fd):
+        """Get (cols, rows) from a putative fd to a tty."""
+        try:                               
+            rows_cols = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234')) 
+            return tuple(reversed(rows_cols))
+        except:
+            return None
+    # Try std in/out/err...
+    cr = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)
+    # ...or ctty...
+    if not cr:
+        try:
+            fd = os.open(os.ctermid(), os.O_RDONLY)
+            cr = ioctl_GWINSZ(fd)
+            os.close(fd)
+        except:
+            # ...or fall back to defaults
+            cr = (int(os.environ.get('COLUMNS', default_cols)), 
+                  int(os.environ.get('LINES', default_rows)))
+    return cr
+
+def _autoindent(labels, indent=0, maxindent=25, extra=2):
+    return max(indent + extra, *(len(s) for s in labels if len(s) < maxindent))
+
+## Public API
+
+def get_metainfo(scriptfile,
+                 command=None,
+                 keywords=['author', 'contact', 'copyright', 'download', 'version', 'website'],
+                 special={},
+                 first_line_pattern=r'^(?P<progname>.+)(\s+v(?P<version>\S+))?',
+                 keyword_pattern_template=r'^\s*%(pretty)s:\s*(?P<%(keyword)s>\S.+?)\s*$',
+                 prettify = lambda kw: kw.capitalize().replace('_', ' ')):
+    """Dumb helper for pulling metainfo from a script __doc__ string.
+ 
+    Returns a metainfo dict with command, description, progname and the given 
+    keywords (if present).   
+    
+    This function will only make minimal efforts to succeed. If you need 
+    anything else: roll your own.
+    
+    If command is None, it is assumed to be os.path.basename(scriptfile) minus
+    any .py? filename extension.
+
+    The docstring needs to be multiline and the closing quotes need to be first 
+    on a line, optionally preceeded by whitespace. 
+    
+    The first non-whitespace line is re.search'ed using first_line_pattern, 
+    default e.g (version optional, contains no whitespace): PROGNAME [vVERSION]
+    
+    The next non-whitespace, non-keyword line is expected to be the program 
+    description.
+
+    The following lines are re.search'ed against a keyword:pattern dict which
+    is constructed using  
+    keyword_pattern % dict(pretty=prettify(keyword), keyword=keyword)
+    Default prettify is keyword.capitalize().replace('_', ' '). Example,
+    for the keyword "licence" will match the following line:
+    License: The MIT license.
+    and set the license metainfo to "The MIT license.".
+        
+    Any keyword:pattern pairs that need special treatment can be supplied with 
+    special.
+    """
+    patterns = dict((kw, re.compile(keyword_pattern_template % dict(pretty=prettify(kw), keyword=kw))) for kw in keywords)
+    patterns.update(special)
+    metainfo = dict()
+    command = os.path.basename(scriptfile)
+    basename, ext = os.path.splitext(command)
+    if ext.startswith('.py'):
+        command = basename
+    metainfo['command'] = command
+
+    script = open(scriptfile)
+    closer = ''
+    for line in script:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line[:3] in ('"""', "'''"):
+            closer = line[:3] 
+            break
+        raise ValueError('file contains no docstring')
+    if not line:
+        for line in script:
+            line = line.strip()
+            if line:
+                break
+    g = re.search(first_line_pattern, line[3:]).groupdict()
+    metainfo['progname'] = g['progname']
+    if g['version']:
+        metainfo['version'] = g['version']
+    for line in script:
+        if line.strip().startswith(closer):
+            break
+        for keyword, pattern in patterns.items():
+            m = pattern.search(line)
+            if m:
+                metainfo[keyword] = m.group(keyword)
+                break
+        if line.strip() and not 'description' in metainfo:
+            metainfo['description'] = line.strip()
+    return metainfo
+
+class Parameter(object):
+    """A program parameter.
+    
+    Has subclasses Option and PositionalArgument.
+    """
+    def __init__(self, name, format, recurring=False, docs=None):
+        self.name = name
+        self.format = formats.get_format(format)
+        self.docs = docs or self.format.docs
+        self.recurring = recurring
+
+    @property
+    def strvalue(self):
+        value = self.value
+        if not self.recurring:
+            value = [value]
+        return ', '.join(self.format.present(v) for v in value)
+    
+    nargs = property(lambda self: self.format.nargs)
+    formatname = property(lambda self: self.format.name)
+
+    def parse(self, argv):
+        """Consume and process arguments and store the result.
+
+        Override in subclasses to do actual work. Subclasses may take other
+        params.
+        """
+
+    def parsestr(self, argsstr, usedname, location):
+        """Parse a string lexically and store the result.
+
+        Override in subclasses to do actual work. Subclasses may take other
+        params.
+        """
+    
+class Option(Parameter):
     """A program option."""
     
     def __init__(self, 
                  name, 
                  format, 
-                 abbreviation='', 
-                 default=_UNSET, 
-                 reserved=False, 
-                 docs='', 
-                 recurring=False):
+                 abbreviation=None, 
+                 default=_UNSET,
+                 recurring=False, 
+                 reserved=False,
+                 docs=None):
         """
-        ARGS:
-        name <str>:
-            The long option name. Used in settings files and with a '--'
-            prefix on the command line. This should be as brief and
-            descriptive as possible. Must be at least length 2, must start
-            and end with a letter or number and may contain letters,
-            numbers, underscores and hyphens in between.
-        format <Format> or <class Format>:
-            How to treat this option and any arguments it may require.
-        default <str>:
-            The string that will be fed to this option if the user
-            doesn't supply any value (for example in settings files or
-            on the command line).
-        abbreviation <str>:
-            The one-letter (or digit) abbreviation of the option name.
-        reserved = False <bool>:
-            Is the option reserved for command line use?
-        docs = '' <str>:
-            User friendly help text for the option. '' means use docs
-            from the Format.
-        recurring = False <bool>:
-            Is the option allowed to occur several times on the command
-            line? Note that when recurring = True, then .value() will
-            return a list of values where the first item is the builtin
-            default  and any following items will be the rest of the
-            values in the order parsed.
+        name is the long option name. Used in settings files and with a '--'
+        prefix on the command line. This should be as brief and descriptive 
+        as possible. Must be at least length 2, must start and end with a 
+        letter or number and may contain letters, numbers, underscores and 
+        hyphens in between.
         
+        format should be a formats.Format subclass or instance, and determines
+        how this option behaves and what arguments it may require. The name of
+        one of the formats in the tui.formats module is also accepted.
+        
+        abbreviation (if given) is the one-character abbreviation of the option
+        name. Can be anything other than a literal '-' character. Used with a 
+        '-' prefix on the command line.
+
+        default is the option's default value. Omit to use format.default, or 
+        an empty list if the option is recurring.
+
+        If reserved is true the option will be reserved for command line use.
+        
+        docs is user friendly help text for the option. None means use 
+        format.docs and add note on recurrence or command line reservation.
+        
+        If recurring is true, the option allowed to occur several times on the
+        command line. .value will then be a list of all parsed values, in 
+        parsing order. 
         """
-        sOptionNameRE = r'[A-Za-z0-9][\w-]*[A-Za-z0-9]'
-        sOptionAbbreviationRE = r'[A-Za-z0-9]'
-        if not re.match(sOptionNameRE, name):
-            sErrorMsg = "Invalid name (does not match %s)."
-            sErrorMsg %= repr(sOptionNameRE)
-            raise OptionError(message=sErrorMsg)
-        self.sName = name
-        if isinstance(format, type(formats.Format)):
-            format = format()
-        self.oFormat = format
+        super(Option, self).__init__(name, format, recurring, docs)
         if default is _UNSET:
             if recurring:
                 default = []
             else:
-                default = format.default
-        self.xValue = default
+                default = self.format.default
+        self.value = default
         if abbreviation and len(abbreviation) != 1:
             raise ValueError("Option abbreviations must be strings of length 1.")
-        if abbreviation and not re.match(sOptionAbbreviationRE, abbreviation):
-            sErrorMsg = "Invalid abbreviation (does not match %s)."
-            sErrorMsg %= repr(sOptionAbbreviationRE)
-            raise OptionError(message=sErrorMsg)
-        self.sAbbreviation = abbreviation
-        self.bReserved = reserved
-        if docs:
-            self.sDocs = docs
-        else:
-            self.sDocs = self.oFormat.docs()
-        self.bAllowRecurrence = recurring
-        self.sLocation = "Builtin default."
+        if abbreviation == '-':
+            raise ValueError("Invalid abbreviation (cannot be '-').")
+        self.abbreviation = abbreviation
+        self.reserved = reserved
+        self.location = "Builtin default."
+        if docs is None:
+            if recurring:
+                self.docs += " Can be used repeatedly."
+            if reserved:
+                self.docs += " Reserved for command line use."
 
-    def parse(self, args, usedname, location):
+    def parse(self, argv, usedname, location):
         """Consume and process arguments and store the result.
         ARGS:
-        args <list str>:
+        argv <list str>:
             The argument list to parse.
         usedname <str>:
             The string used by the user to invoke the option.
@@ -332,16 +655,16 @@ class Option:
 
         """
         try:
-            xValue = self.oFormat.parse(args)
-        except formats.BadNumberOfArgumentsError, e:
-            raise BadNumberOfArgumentsError(usedname, e.required(), e.supplied())
-        except formats.BadArgumentError, e:
-            raise BadArgumentError(usedname, e.argument(), e.details())
-        if self.bAllowRecurrence:
-            self.xValue.append(xValue)
+            value = self.format.parse(argv)
+        except formats.BadNumberOfArguments, e:
+            raise BadNumberOfArguments(e.required, usedname, e.supplied)
+        except formats.BadArgument, e:
+            raise BadArgument(e.argument, usedname, e.message)
+        if self.recurring:
+            self.value.append(value)
         else:
-            self.xValue = xValue
-        self.sLocation = location
+            self.value = value
+        self.location = location
 
     def parsestr(self, argsstr, usedname, location):
         """Parse a string lexically and store the result.
@@ -356,817 +679,677 @@ class Option:
 
         """
         try:
-            xValue = self.oFormat.parsestr(argsstr)
-        except formats.BadNumberOfArgumentsError, e:
-            raise BadNumberOfArgumentsError(usedname, e.required(), e.supplied())
-        except formats.BadArgumentError, e:
-            raise BadArgumentError(usedname, e.argument(), e.details())
-        if self.bAllowRecurrence:
-            self.xValue.append(xValue)
+            value = self.format.parsestr(argsstr)
+        except formats.BadNumberOfArguments, e:
+            raise BadNumberOfArguments(e.required, usedname, e.supplied)
+        except formats.BadArgument, e:
+            raise BadArgument(e.argument, usedname, e.message)
+        if self.recurring:
+            self.value.append(value)
         else:
-            self.xValue = xValue
-        self.sLocation = location
-        self.sLocation = location
+            self.value = value
+        self.location = location
 
-    def strvalue(self):
-        value = self.xValue
-        if not self.bAllowRecurrence:
-            value = [value]
-        return ', '.join(self.oFormat.strvalue(v) for v in value)
+help_option = Option('help', formats.Flag, 'h', reserved=True, docs='Print help and exit.')
+longhelp_option = Option('HELP', formats.Flag, reserved=True, docs='Print verbose help and exit.')
+version_option = Option('version', formats.Flag, 'V', reserved=True, docs='Print version string and exit.')
+settings_option = Option('settings', formats.Flag, reserved=True, docs='Print settings summary and exit.')
 
-    def formatname(self):
-        return self.oFormat.shortname()
-
-    def name(self):
-        return self.sName
-
-    def abbreviation(self):
-        return self.sAbbreviation
-
-    def value(self):
-        return self.xValue
-
-    def nargs(self):
-        return self.oFormat.nargs()
-
-    def docs(self):
-        return self.sDocs
-
-    def location(self):
-        return self.sLocation
-
-    def recurring(self):
-        return self.bAllowRecurrence
-
-    def reserved(self):
-        return self.bReserved
-
-    def setdocs(self, newdocs):
-        self.sDocs = newdocs
-
-class StandardHelpOption(Option):
-    """A standard help option."""
-    def __init__(self):
-        Option.__init__(self, 'help', formats.Flag, 'h', reserved=True,
-                        docs='Print command line help and exit.')
-
-class StandardLongHelpOption(Option):
-    """A standard long help option."""
-    def __init__(self):
-        Option.__init__(self, 'HELP', formats.Flag, 'H', reserved=True,
-                        docs='Print verbose help and exit.')
-
-class StandardVersionOption(Option):
-    """A standard version option."""
-    def __init__(self):
-        Option.__init__(self, 'version', formats.Flag, 'V', reserved=True,
-                        docs='Print version string and exit.')
-
-class StandardSettingsOption(Option):
-    """A standard settings option."""
-    def __init__(self):
-        Option.__init__(self, 'settings', formats.Flag, 'S', reserved=True,
-                        docs='Print settings summary and exit.')
-
-class PositionalArgument:
+class PositionalArgument(Parameter):
     """A positional command line program parameter."""
     
-    def __init__(self, name, format, docs='', recurring=False, optional=False):
-        """
-        ARGS:
-        name <str>:
-            Will be shown on the help screen. Must be at least length 2,
-            must start and end with a letter or number and may contain
-            letters, numbers, underscores and hyphens in between.
-        format <Format> or <class Format>:
-            How to treat this argument. .nargs() must be > 0.
-        docs = '' <str>:
-            User friendly description of the argument. '' means use default
-            docs for the format.
-        recurring = False <bool>:
-            Do we accept multiple (1 or more) occurrences for this arg?
-            With recurring = True then the .parse() method will consume all
-            argument items fed to it and return a list of parsed values.
-        optional = False <bool>:
-            Do we permit the user to leave this arg out of the command line?
-        
-        """
-        sNameRE = r'[A-Za-z0-9][\w-]*[A-Za-z0-9]'
-        if not re.match(sNameRE, name):
-            sErrorMsg = "Invalid name (does not match %s)."
-            sErrorMsg %= repr(sNameRE)
-            raise PositionalArgumentError(message=sErrorMsg)
-        self.sName = name
-        if isinstance(format, type(formats.Format)):
-            format = format()
-        if format.nargs() == 0:
-            raise PositionalArgumentError("PositionalArgument Formats must have .nargs() >= 1.")
-        self.oFormat = format
-        if not docs:
-            docs = format.docs()
-        self.sDocs = docs
-        self.bRecurring = recurring
-        self.bOptional = optional
-
-    def parse(self, args):
-        """Consume and process arguments and return the resulting value.
-        ARGS:
-        args <list str>:
-            The list of arguments that should be parsed.
-        RETURN:
-        Whatever is returned by the Formats parser, or None if the the 
-        positional argument is optional and there is nothing to parse.
-        OR:
-        A list of parsed items if self.bRecurring is True. This list will 
-        be length 0 if the positional argument is optional and there is 
-        nothing to parse.
-            
-        """
-        try:
-            if self.bRecurring:
-                lxValue = []
-                if not self.optional():
-                    lxValue.append(self.oFormat.parse(args))
-                while args:
-                    lxValue.append(self.oFormat.parse(args))
-                return lxValue
-            else:
-                if not args and self.optional():
-                    return None
-                return self.oFormat.parse(args)
-        except formats.BadNumberOfArgumentsError, e:
-            raise BadNumberOfArgumentsError(self.sName.upper(), e.required(), e.supplied())
-        except formats.BadArgumentError, e:
-            raise BadArgumentError(self.sName.upper(), e.argument(), e.details())
-        
-    def name(self):
-        return self.sName
-
-    def formatname(self):
-        return self.oFormat.shortname()
-
-    def docs(self):
-        return self.sDocs
-
-    def value(self):
-        return self.xValue
-
-    def setdocs(self, newdocs):
-        self.sDocs = newdocs
-
-    def recurring(self):
-        return self.bRecurring
-
-    def optional(self):
-        return self.bOptional
-
-
-class StrictConfigParser(ConfigParser.SafeConfigParser):
-    """A config parser that minimises the risks for hard-to-debug errors."""
+    _name_re = r'[A-Za-z0-9][\w-]*[A-Za-z0-9]'
     
-    def __init__(self, defaults=None, comment='#'):
-        self.sLineCommentStart = comment
-        ConfigParser.SafeConfigParser.__init__(self, defaults)
-
-    def optionxform(self, option):
-        """Strip whitespace only."""
-        return option.strip()
-
-    def unusedoptions(self, section):
-        """Returns a list of options that are not used to format values for 
-        any other options in the section. Good for finding out if the user
-        has misspelled any of the options.
-        IN:
-        section <str>:
-            What section to read.
-        OUT:
-            The names of unused options as a list of strings.
-            
+    def __init__(self, name, format, recurring=False, optional=False, docs='', displayname=None):
         """
-        if not self.has_section(section):
-            return []
-        sRawValues = [self.get(section, x, raw=True) for x in self.options(section)]
-        lsUnusedOptions = []
-        for sOption in self.options(section):
-            sFormatter  = "%%(%s)s" % sOption
-            for sValue in sRawValues:
-                if sFormatter in sValue:
-                    break
-            else:
-                lsUnusedOptions.append(sOption)
-        return lsUnusedOptions
-    
+        name is the name of the positional argument. Must be at least length 2,
+        must start and end with a letter or number and may contain letters, 
+        numbers, underscores and hyphens in between.
+        
+        format should be a formats.Format subclass or instance, and determines
+        how this positional argument behaves and what arguments it may require. 
+        The name of one of the formats in the tui.formats module is also 
+        accepted.
+        
+        docs is user friendly help text for the option. None means use 
+        format.docs.
+        
+        If recurring is true, this positional argument can be used multiple 
+        times on the command line, and .parse() will consume all arguments fed to it.
+        
+        If optional is true, the user is permitted to omit this argument from 
+        the command line?
+        """
+        super(PositionalArgument, self).__init__(name, format, recurring, docs)
+        self.optional = optional
+        self._value = None
+        self.displayname = displayname or name.upper().replace('-', '_')
+        if docs is None:
+            if recurring:
+                self.docs += " Can be used multiple times on the command line."
+            if optional:
+                self.docs += " Optional."
 
-def get_terminal_size(default_cols=80, default_rows=25):
-    """Return current terminal size (cols, rows) or a default if detect fails.
-
-    This snippet comes from color ls by Chuck Blake:
-    http://pdos.csail.mit.edu/~cblake/cls/cls.py
-
-    """
-    def ioctl_GWINSZ(fd):
-        try:                                
-            import fcntl, termios, struct, os
-            cr = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))
-        except:
-            return None
-        return cr
-
-    cr = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)  # try open fds
-    if not cr:                                                  # ...then ctty
+    def _get_value(self):
         try:
-            fd = os.open(os.ctermid(), os.O_RDONLY)
-            cr = ioctl_GWINSZ(fd)
-            os.close(fd)
-        except:
-            pass
-    if not cr:                            # env vars or finally defaults
-        try:
-            cr = (os.environ['LINES'], os.environ['COLUMNS'])
-        except:
-            cr = (default_cols, default_rows)
-    return int(cr[1]), int(cr[0])         # reverse rows, cols
+            return self._value
+        except AttributeError:
+            raise AttributeError('value does not exist before parsing arguments')
 
-class tui:
+    nargs = property(lambda self: self.format.nargs)
+    formatname = property(lambda self: self.format.name)
+    value = property(_get_value, lambda self, value: setattr(self, '_value', value))
+
+    def parse(self, argv):
+        """Consume and process arguments and store the result.
+        
+        argv is the list of arguments to parse (will be modified).
+        
+        Recurring PositionalArgumants get a list as .value.
+        
+        Optional PositionalArguments that do not get any arguments to parse get 
+        None as .value, or [] if recurring. 
+        """
+        if not argv and self.optional:
+            self.value = self.recurring and [] or None
+            return
+        try:
+            value = self.format.parse(argv)
+            print self.name, argv, value 
+            if not self.recurring:
+                self.value = value
+                return
+            self.value = [value]
+            while argv:
+                self.value.append(self.format.parse(argv))
+        except formats.BadNumberOfArguments, e:
+            raise BadNumberOfArguments(e.required, self.displayname, e.given) XXX
+        except formats.BadArgument, e:
+            raise BadArgument(e.argument, self.displayname, e.details)
+
+class tui(TUIBase):
     """Textual user interface."""
+    
+    # What sections to include in help and longhelp, and in what order.
+    help_sections = ['title', 'description', 'usage', 'arguments', 'options', 'general']
+    longhelp_sections = ['title',
+                         'description',
+                         'contact',
+                         'website',
+                         'download',
+                         'license',
+                         'usage',
+                         'arguments',
+                         'options',
+                         'general',
+                         'additional',
+                         'files']
+    
     def __init__(self,
-                 main=None,
+                 version=None,
+                 install_dir=None,
                  progname=None,
-                 programmer='ChangeThisProgrammerName',
-                 versionstr='0.1.0',
-                 title='%(progname)s v%(version)s by %(programmer)s.',
+                 author=None,
+                 title='%(progname)s v%(version)s by %(author)s.',
                  description=None,
                  contact=None,
+                 website=None,
+                 download=None,
+                 license=None,
                  copyright=None,
-                 command='',
-                 usage='',
-                 generaldocs=None,
-                 additionaldocs=None,
+                 command=None,
+                 usage=None,
+                 general=None,
+                 additional=None,
+                 note=None,
                  filedocs=None,
-                 notedocs=None,
-                 docsfile=None,
-                 width=0,
+                 docsfiles=None,
+                 docsfilenames=None,
+                 width=None,
                  configfiles=None,
+                 configdirs=None,
+                 configfilenames=None,
                  sections=None,
-                 helpoption=StandardHelpOption,
-                 longhelpoption=StandardLongHelpOption,
-                 versionoption=StandardVersionOption,
-                 settingsoption=StandardSettingsOption):
+                 ignore=None,
+                 options=None,
+                 option_order=None,
+                 abbreviations=None,
+                 positional_args=None,
+                 positional_arg_values=None,
+                 helpoption=help_option,
+                 longhelpoption=longhelp_option,
+                 versionoption=version_option,
+                 settingsoption=settings_option):
         """
-        ARGS:
-        main = None <str>:
-            Full path to the executed script. Will be used to determine 
-            defaults for command, progname, versionstr and default search 
-            paths for docsfile and configfiles. Note that the module will 
-            be imported to check the __version__ attribute, so it should 
-            know better than to do anything nasty on import. 
-        progname = 'ChangeThisProgramName' <str>:
-            The user friendly name of the program. Used for the doc string
-            formatter %(progname)s.
-        programmer = 'ChangeThisProgrammerName' <str>:
-            Who made the program. Used for the doc string formatter
-            %(programmer)s.
-        versionstr = '0.1.0' <str>:
-            The current program version. Used for the doc string
-            formatter %(version)s.
-        title = '%(progname)s v%(version)s by %(programmer)s.' <str>:
-            What to put in the title line on help pages. May contain doc
-            string formatters.
-        description = 'ChangeThisDescription' <str>:
-            A oneliner describing the program. May contain docvar
-            formatters.
-        contact = None <list str>, <str> or None:
-            Contact information as a list of indented paragraphs. May
-            contain docvar formatters. String values are interpreted as
-            a list of one indented paragraph. None or an empty list means
-            no such documentation.
-        copyright = None <list str>, <str> or None:
-            Copyright information as a list of indented paragraphs. May
-            contain docvar formatters. String values are interpreted as
-            a list of one indented paragraph. None or an empty list means
-            no such documentation.
-        command = '' <str>:
-            File name of the main executable. How to execute the program.
-            Used for the doc string formatter %(command)s. '' means
-            the basename of sys.argv[0].
-        usage = '' <str>:
-            User friendly string showing how to run the program. May
-            contain doc string formatters. '' means auto generate from
-            options and positional parameters.
-        generaldocs = None <list str>, <str> or None:
-            General documentation on the program as a list of indented
-            paragraphs. May contain docvar formatters. String values are
-            interpreted as a list of one indented paragraph. None or an
-            empty list means no such documentation.
-        additionaldocs = None <list str>, <str> or None:
-            Additional documentation on the program as a list of indented
-            paragraphs. May contain docvar formatters. String values are
-            interpreted as a list of one indented paragraph. None or an
-            empty list means no such documentation.
-        filedocs = None <dict str list str> or None:
-            Docs on files used by the program as a dict of file names and
-            indented paragraphs. May contain doc string formatters. None or
-            an empty dict means no such documentation.
-        notedocs = None <list str>, <str> or None:
-            Docs on noteworthy quirks in the program as a list of indented
-            paragraphs. May contain doc string formatters. String values are
-            interpreted as a list of one indented paragraph. None or an
-            empty list means no such documentation.
-        docsfile = None <str> or None:
-            Where to read docs for the prog. '' means there are no default
-            docs to read. None means look for "%(command)s.docs" in the 
-            script dir, and use '' if it's not there. Note that no docs will
-            be read on instantation. Use .readdocs() (or .initprog()) for
-            that.
-        width = 0 <int>:
-            The maximum allowed width for help text. 0 means try to guess
-            the terminal width, and use 79 if that fails.
-        configfiles = None <list str>, <str> or None:
-            What config files to parse. Note that they will not be parsed
-            on instantiation - first add options and then use .parsefiles()
-            to parse. None means use a list of "%(command)s.cfg" in the
-            script directory, "%(command)s.cfg" in the /etc/ directory, and
-            ".%(command)s" in the users home directory. Any docvar
-            formatters will be expanded at parse time. A string value will
-            be interpreted as a list of one item. Set to [] to tell tui not
-            to auto generate a "Config File" FILE entry for the longhelp on
-            instantiation. Use setconfigfiles() to set config files and
-            addconfigfiledocs() to auto generate the "Config File" FILE
-            entry at a later stage.
-        sections = None <list str>, <str> or None:
-            What sections to read in config files. May contain docvar
-            formatters. Str values will be interpreted as a list of one
-            item. None means use the list ['%(progname)s']. The
-            [DEFAULT] section is always read, and it is read as if its
-            contents were copied to the beginning of all other sections.
-        helpoption = StandardHelpOption <option>, <class Option> or None:
-            Add an option that lets the user request help in the usual
-            way. Default is '--help' or '-h', option reserved for command
-            line use). None means don't add such an option.
-        longhelpoption = StandardLongHelpOption <option>, <class Option>
-          or None:
-            Add an option that lets the user request more verbose help.
-            Default is '--HELP' or '-H', option reserved for command
-            line use). None means don't add such an option.
-        versionoption = StandardVersionOption <option>, <class Option>
-          or None:
-            Add an option that lets the user print version information
-            Default is '--version' or '-V', option reserved for command
-            line use). None means don't add such an option.
-        settingsoption = StandardSettingsOption <option>, <class Option>
-          or None:
-            Add an option that lets the user print the program settings
-            Default is '--settings' or '-S', option reserved for command
-            line use). None means don't add such an option.
-        NOTE:
-            Just adding the helpoption, longhelpoption, versionoption
-            and settingsoption at instantiation will not activate their
-            documented functionality. The developer will have to do this
-            manually, or automatically using the initprog() method after
-            all other options and positional arguments have been added.
- 
-        """
+        Many of the metainfo parameters (author, progname...) should already
+        be present in the program docstring if you're coding by the book. You 
+        can avoid repeating them by doing something like: 
+        ui = tui(..., **get_metainfo(__file__)).
+        The parameters that will be available using the above incantation are
+        marked with asterixes* below.
+        
+        .readdocs() can read most user documentaion from external docsfiles, 
+        so there is typically no need to supply that on instantiation. See the
+        docsfile parameter. Parameters that can be set using .readdocs() are 
+        marhed with percent% below.
+        
+        All parameters that take a list of indented paragraphs can use docvars.
+        They also accept just a string which, is then taken as a list of one 
+        paragraph. None means there is no such documentation.
+        
+        All parameters that take an Option also accept factory functions for
+        Option objects (like a class, or a function like help_option). None
+        means don't add such an option. Note however that just adding the 
+        helpoption, longhelpoption, versionoption and settingsoption at 
+        instantiation will not activate their documented functionality. Use 
+        e.g. .start() for this.
+        
+        version* is the current program version string. Although you *can* set
+        this using get_metainfo, you typically want to pass __version__ here
+        instead. Available as a docvar.
 
-        if main:
-            mainmodule_dir, mainmodule = os.path.split(main)
-            if mainmodule.startswith('__init__.py'):
-                sys.path.insert(0, os.path.dirname(mainmodule_dir))
-                mainmodule = os.path.split(mainmodule_dir)[1]
-            else:
-                sys.path.insert(0, mainmodule_dir)
-                mainmodule = mainmodule.split('.')[0]
-            try:
-                mod = __import__(mainmodule)
-                versionstr = mod.__version__
-                if description is None:
-                    description = str(mod.__doc__).splitlines()[0]
-            except:
-                pass
-            sys.path.pop(0)
-            if command is None:
-                command = mainmodule
-            if progname is None:
-                progname = mainmodule.capitalize()
-            if docsfile is None:
-                docsfile = os.path.join(mainmodule_dir, mainmodule + '.docs')
-            if configfiles is None:
-                configfiles = [os.path.join(mainmodule_dir, mainmodule + '.cfg'),
-                               os.path.join('/etc/', '%(command)s.cfg'),
-                               os.path.join(os.path.expanduser('~'), '.%(command)s')]
-        self.dssDocVars = {'progname': progname,  'programmer': programmer,
-                           'version': versionstr, 'command': command}
-        self.sTitle = title
-        self.sDescription = description
-        self.sUsage = usage
-        if generaldocs is None:
-            generaldocs = []
-        elif isinstance(generaldocs, str):
-            generaldocs = [generaldocs]
-        self.lsGeneralDocs = generaldocs
-        if additionaldocs is None:
-            additionaldocs = []
-        elif isinstance(additionaldocs, str):
-            additionaldocs = [additionaldocs]
-        self.lsAdditionalDocs = additionaldocs
-        if contact is None:
-            contact = []
-        elif isinstance(contact, str):
-            contact = [contact]
-        self.lsContact = contact
-        if copyright is None:
-            copyright = []
-        elif isinstance(copyright, str):
-            copyright = [copyright]
-        self.lsCopyright = copyright
+        install_dir (if given) will be searched for configfiles and docsfiles.
+        Use containing dir if given a python package or a path to a file (e.g. 
+        mypackage or __file__).
+        
+        progname* is the user friendly name of the program. Available as a 
+        docvar. 
+        
+        author* is who made the program. Available as a docvar. 
+        
+        title is what to put in the title line on help pages. Can use docvars.
+
+        description%* is a oneliner describing the program. Can use docvars.
+        
+        contact%* is contact information as a list of indented paragraphs.
+
+        website%* is the url to the website of the program. Can be given as a
+        list of indented paragraphs if needed.
+
+        download%* is where the program can be downloaded. Can be given as a
+        list of indented paragraphs if needed.
+        
+        copyright%* is copyright information as a list of indented paragraphs. 
+        
+        license%* is brief information on the licensing conditions of the 
+        program. Can be given as a list of indented paragraphs if needed.
+
+        command* is how to execute the program. Available as a docvar. None 
+        means use the basename of sys.argv[0] minus any .py? filename extension.
+        
+        usage is user friendly help on how to execute the program. Can 
+        use docvars. None means auto generate from options and positional 
+        arguments.
+        
+        general% is general program documentation as a list of indented
+        paragraphs. Typically displayed on the normal help page. 
+
+        additional% is additional program documentation as a list of indented
+        paragraphs. Typically only displayed in verbose help (longhelp). 
+
+        note% is the same as additional, only with a different label.
+
+        filedocs% is documentation on files used by the program, as a dict of
+        file names and indented paragraphs. Typically only displayed in 
+        verbose help (longhelp). Keys and values may use docvars. None means 
+        no such documentation.
+        
+        docsfilenames is a list of basenames of docsfiles and is only useful 
+        together with install_dir. A str means a list of one item. None means 
+        [basename(install_dir) + 'docs' (if given), command + '.docs']. 
+        Do not use together with the docsfiles parameter.
+
+        docsfiles is a list of paths to potential DocParser docsfiles; parse if
+        present, in the given order. None means look for each docsfilename in
+        install_dir (if given). A str means a list of one item. Note that no 
+        docs will be read on instantation. Use .readdocs() (or .launch()) for 
+        that.
+        
+        width is the maximum allowed width for help text. 0 means try to guess
+        the terminal width, and use 79 if that fails.
+        
+        configdirs is a list of paths to directories to search for configfiles.
+        None means [install_dir (if given), '/etc/' + command, '~/.' + command].
+        A str means a list of one item. Do not use together with the configfiles
+        parameter.
+        
+        configfilenames is a list of basenames of configfiles. A str means a 
+        list of one item. None means [command + '.conf']. Do not use together 
+        with the configfiles parameter.
+        
+        configfiles is a list of config files to parse. None means try each 
+        configfilename in the given order, in each of the configdirs in the 
+        given order. configfiles are parsed incrementally by .parsefiles() (or
+        .launch()). A str means a list of one item. [] means no configfiles.
+        
+        sections is a list of sections to read in config files. A str means a 
+        list of one item. None means [command]. The DEFAULT section (note 
+        uppercase) is always read, and it is read as if its contents were 
+        copied to the beginning of all other sections.
+        
+        ignore is a list of option and positional argument names that should be
+        ignored if encountered in configfiles or docsfiles. Any other unknown 
+        names will raise an error. This is primarily to help users catch 
+        spelling mistakes. This feature is useful for example if you are using
+        the same files for several programs in a suite, where some parameters 
+        are shared and you want to ignore the others. Set to None to ignore all
+        all unknown (not recommended). 
+        
+        options can be used to supply a preconfigured option dictionary, if you
+        for some reason prefer this to .makeoption(). tui will not check this 
+        for you. See also option_order and abbreviations.
+        
+        option_order determines the order in which the options will be shown in
+        help texts.
+        
+        abbreviations is a abbreviation:option dict, similar to options.
+        
+        positional_args can be used to supply a list of preconfigured positional
+        arguments, if you for some reason prefer this to .makeposarg(). tui will 
+        not check this for you. See also positional_arg_names.
+        
+        positional_arg_names are the display names for positional arguments in
+        help texts.
+        
+        helpoption adds an option that lets the user request help in the usual
+        way. Default is '--help' or '-h', option reserved for command line use.
+        None means don't add such an option.
+        
+        longhelpoption adds an option that lets the user request verbose help.
+        Default is '--HELP' or '-H', option reserved for command line use. None
+        means don't add such an option. 
+
+        versionoption adds an option that lets the user print the version 
+        string. Default is '--version' or '-V', option reserved for command
+        line use). None means don't add such an option.
+
+        settingsoption adds an option that lets the user print a brief summary
+        of program settings. Default is '--settings' or '-S', option reserved 
+        for command line use). None means don't add such an option.
+        """
+        params = locals()
+        if command is None:
+            command = os.path.basename(sys.argv[0])
+            basename, ext = os.path.splitext(command)
+            if ext.startswith('.py'):
+                command = basename
+
+        # Did the user give a module/package rather than a path? 
+        if isinstance(install_dir, type(sys)):
+            install_dir = install_dir.__file__
+        if isinstance(install_dir, basestring) and os.path.isfile(install_dir):
+            install_dir = os.path.dirname(install_dir)
+        
+        self.docvars = dict((s, params[s]) for s in ['author', 'command', 'progname', 'version'])
+        self.docs = dict(title=_docs(title, self.docvars),
+                         usage=_docs(usage, self.docvars),
+                         files=_docs(filedocs, self.docvars))
         if filedocs is None:
-            filedocs = {}
-        self.dslsFileDocs = filedocs
-        if notedocs is None:
-            notedocs = []
-        elif isinstance(notedocs, str):
-            notedocs = [notedocs]
-        self.lsNoteDocs = notedocs
-        if docsfile is None:
-            if main:
-                docsfile = os.path.splitext(main)[0] + '.docs'
-            else:
-                docsfile = os.path.join(sys.path[0], "%s.docs" % command)
-            if not os.path.isfile(docsfile):
-                docsfile = ''
-        self.sDocsFile = docsfile
+            filedocs = dict()
+        self.docs['files'] = filedocs
+        self.docs.update((name, _list(params[name])) for name in ['additional', 'contact', 'copyright', 'description', 'download', 'general', 'license', 'website'])
+        self.ignore = _list(ignore)
+        if docsfiles is None:
+            if install_dir:
+                if docsfilenames is None:
+                    docsfilenames = [os.path.basename(install_dir) + '.docs']
+                    if command:
+                        docsfilenames.append(command + '.docs')
+                docsfiles = [os.path.join(install_dir, f) for f in docsfilenames]
+        elif docsfilenames:
+            raise ValueError('do not use docsfilenames together with docsfiles')
+        self.docsfiles = docsfiles
+            
+        self.sections = _list(sections, [command])
         if configfiles is None:
-            configfiles = [os.path.join(sys.path[0], '%(command)s.cfg'),
-                           os.path.join('/etc/', '%(command)s.cfg'),
-                           os.path.join(os.path.expanduser('~'), '.%(command)s')]
-        elif isinstance(configfiles, str):
+            if configdirs is None:
+                configdirs = []
+                if install_dir:
+                    configdirs.append(install_dir)
+                configdirs += [os.path.join('/etc', command), 
+                               os.path.join(os.path.expanduser('~'), '.' + command)]
+            if configfilenames is None:
+                configfilenames = [command + '.conf']
+            configfiles = [os.path.join(d, f) for d in configdirs for f in configfilenames]
+        elif configdirs or configfilenames:
+            raise ValueError('do not use configfiles together with configdirs and configfilenames')
+        elif isinstance(configfiles, basestring):
             configfiles = [configfiles]
-        self.lsConfigFiles = configfiles
-        if sections is None:
-            sections = ['%(command)s']
-        elif isinstance(sections, str):
-            sections = [sections]
-        self.lsSections = sections
-        if configfiles:
+        self.configfiles = configfiles
+        if self.configfiles:
             self.addconfigfiledocs()
-        self.dsoOptions = {}
-        self.lsOptionOrder = []
-        self.dsoAbbreviations = {}
-        self.loPositionalArgs = []
-        self.lxPositionalArgValues = []
-        self.sHelpOption = ''
-        self.sLongHelpOption = ''
-        self.sVersionOption = ''
-        self.sSettingsOption = ''
-        if helpoption:
-            if isinstance(helpoption, type(Option)):
-                helpoption = helpoption()
-            self.sHelpOption = helpoption.name()
-            self.addoption(helpoption)
-        if longhelpoption:
-            if isinstance(longhelpoption, type(Option)):
-                longhelpoption = longhelpoption()
-            self.sLongHelpOption = longhelpoption.name()
-            self.addoption(longhelpoption)
-        if versionoption:
-            if isinstance(versionoption, type(Option)):
-                versionoption = versionoption()
-            self.sVersionOption = versionoption.name()
-            self.addoption(versionoption)
-        if settingsoption:
-            if isinstance(settingsoption, type(Option)):
-                settingsoption = settingsoption()
-            self.sSettingsOption = settingsoption.name()
-            self.addoption(settingsoption)
+        
+        if options is None:
+            options = dict()
+        self.options = options
+        if option_order is None:
+            option_order = options.keys()
+        self.option_order = option_order
+        if abbreviations is None:
+            abbreviations = dict((o.abbreviation, o) for o in options.values())
+        self.abbreviations = abbreviations
+        if positional_args is None:
+            positional_args = []
+        self.positional_args = positional_args
+        
+        self.basic_option_names = dict()
+        for optiontype in ['help', 'longhelp', 'settings', 'version']:
+            option = params[optiontype + 'option']
+            if not option:
+                continue
+            if not isinstance(option, Option):
+                option = option()
+            self.addoption(option)
+            self.basic_option_names[optiontype] = option.name
+
         if not width:
             width = get_terminal_size()[0]
-        self.iMaxHelpWidth = width
-
-    def __getitem__(self, key):
-        if key.startswith('-'):
-            return self.dsoAbbreviations[key[1]]
-        else:
-            return self.dsoOptions[key]
+        self.width = width
 
     def __iter__(self):
-        return self.dsoOptions.itervalues()
-
-    def addoption(self, option):
-        """Add an Option object to the user interface.
-        ARGS:
-        option <Option>:
-            The option that you want to add.
-
+        """Iterate over .keys()."""
+        return iter(self.keys())
+    
+    def __contains__(self, key):
+        """Shorthand for key in .keys()."""
+        return key in self.keys()
+    
+    def __getitem__(self, key):
+        """Shorthand for .getparam(key).value."""
+        return self.getparam(key).value
+    
+    def __setitem__(self, key, value):
+        """Shorthand for .getparam(key).value = value.
+        
+        Useful when doing additional modifications after tui is done parsing.
         """
-        sName = option.name()
-        sAbbreviation = option.abbreviation()
-        if sName in self.dsoOptions:
-            sErrorMsg = "The name %s is already used by a previosly added option."
-            sErrorMsg %= repr(sName)
-            raise OptionError(message=sErrorMsg)
-        if sAbbreviation and sAbbreviation in self.dsoAbbreviations:
-            sErrorMsg = "The abbreviation %s is already used by the previosly added option %s."
-            sErrorMsg %= (repr(sAbbreviation), repr(self.dsoAbbreviations[sAbbreviation].name()))
-            raise OptionError(message=sErrorMsg)
-        self.dsoOptions[option.name()] = option
-        if sAbbreviation:
-            self.dsoAbbreviations[sAbbreviation] = option
-        self.lsOptionOrder.append(sName)
+        self.getparam(key).value = value
+    
+    def keys(self):
+        """List names of options and positional arguments."""
+        return self.options.keys() + [p.name for p in self.positional_args]
+
+    def values(self):
+        """List values of options and positional arguments."""
+        return self.options.values() + [p.value for p in self.positional_args]
+
+    def items(self):
+        """List values of options and positional arguments."""
+        return [(p.name, p.value) for p in self.options.values() + self.positional_args]
+
+    def dict(self):
+        """Return a name:value dict of all options and positional arguments.
+        
+        Useful when you absolutely need a dict, e.g: do_stuff(**ui.dict()).
+        """
+        return dict(self.items())
+    
+    def getparam(self, key):
+        """Get option or positional argument, by name, index or abbreviation.
+        
+        Abbreviations must be prefixed by a '-' character, like so: ui['-a']
+        """
+        try:
+            return self.options[key]
+        except:
+            pass
+        for posarg in self.positional_args:
+            if posarg.name == key:
+                return posarg
+        try:
+            return self.abbreviations[key[1:]]
+        except:
+            raise KeyError('no such option or positional argument')
+    
+    def addoption(self, option):
+        """Add an Option object to the user interface."""
+        if option.name in self.options:
+            raise ValueError('name already in use')
+        if option.abbreviation in self.abbreviations:
+            raise ValueError('abbreviation already in use')
+        if option.name in [arg.name for arg in self.positional_args]:
+            raise ValueError('name already in use by a positional argument')
+        self.options[option.name] = option
+        if option.abbreviation:
+            self.abbreviations[option.abbreviation] = option
+        self.option_order.append(option.name)
 
     def makeoption(self, 
                    name, 
                    format, 
-                   abbreviation='',
-                   default=_UNSET, 
+                   abbreviation=None,
+                   default=_UNSET,
+                   recurring=False, 
                    reserved=False, 
-                   docs='', 
-                   recurring=False):
-        """Instantiate an Option object and add it to the user interface.
-        ARGS:
-        name <str>:
-            The long option name. Used in settings files and with a '--'
-            prefix on the command line. This should be as brief and
-            descriptive as possible. Must be at least length 2, must start
-            and end with a letter or number and may contain letters,
-            numbers, underscores and hyphens in between.
-        format <Format> or <class Format>:
-            How to treat this option and any arguments it may require.
-        default <str>:
-            The string that will be fed to this option if the user
-            doesn't supply any value (for example in settings files or
-            on the command line).
-        abbreviation <str>:
-            The one-letter (or digit) abreviation of the option name.
-        reserved <bool>:
-            Is the option reserved for command line use?
-        docs <str>:
-            User friendly help text for the option. '' means use docs
-            from the Format.
-        recurring = False <bool>:
-            Is the option allowed to occur several times on the command
-            line? Note that when recurring = True, then .value() will
-            return a list of values where the first item is the builtin
-            default  and any following items will be the rest of the
-            values in the order parsed.        
-        NOTE:
-        This method is a convenience method for .addoption(tui.Option(...))
+                   docs=None):
+        """Create an option and add it to the user interface.
 
+        This is a convenience method for .addoption(Option(...)) and takes the
+        same arguments. 
+        
+        name is the option name. Used in settings files and with a '--' prefix
+        on the command line. This should be as brief and descriptive as 
+        possible. Must be at least length 2, must start and end with a letter 
+        or number and may contain letters, numbers, underscores and hyphens in
+        between.
+        
+        format should be a formats.Format subclass or instance, and determines
+        how this option behaves and what arguments it may require. 
+
+        abbreviation (if given) is the one-letter (or digit) abbreviation of 
+        the option name. Used with a '-' prefix on the command line.
+
+        default is the option's default value. Omit to use format.default, or 
+        an empty list if the option is recurring.
+
+        If reserved is true the option will be reserved for command line use.
+        
+        docs is user friendly help text for the option. None means use 
+        format.docs.
+        
+        If recurring is true, the option allowed to occur several times on the
+        command line. .value will then be a list of all parsed values, in 
+        parsing order. 
         """
-        o = Option(name, format, abbreviation, default, reserved, docs, recurring)
-        self.addoption(o)
+        self.addoption(Option(name, format, abbreviation, default, recurring, reserved, docs))
 
-    def appendposarg(self, posarg):
-        """Append a PositionalArgument object to the user interface.
-        ARGS:
-        posarg <PositionalArgument>:
-            The option that you want to add.
-        NOTE:
-            Optional positional arguments must be added after the required
-            ones. The user interface can have at most one recurring
-            positional argument, and if present, that argument must be the
-            last one.
+    def addposarg(self, posarg):
+        """Append a positional argument to the user interface.
 
+        Optional positional arguments must be added after the required ones. 
+        The user interface can have at most one recurring positional argument, 
+        and if present, that argument must be the last one.
         """
-        if self.loPositionalArgs:
-            if self.loPositionalArgs[-1].recurring():
-                raise PositionalArgumentError("Cannot add further PositionalArguments after a recurring positional argument has been added.")
-            if self.loPositionalArgs[-1].optional() and not posarg.optional():
-                raise PositionalArgumentError("Cannot add required PositionalArguments after an optional positional argument has been added.")
-        self.loPositionalArgs.append(posarg)
+        if self.positional_args:
+            if self.positional_args[-1].recurring:
+                raise ValueError("recurring positional arguments must be last")
+            if self.positional_args[-1].optional and not posarg.optional:
+                raise ValueError("required positional arguments must precede optional ones")
+        self.positional_args.append(posarg)
     
     def makeposarg(self, 
                    name, 
                    format, 
-                   doc='', 
                    recurring=False, 
-                   optional=False):
-        """Create a PositionalArgument object and add it to the user interface.
-        ARGS:
-        name <str>:
-            The name of the positional argument. Shown to user in the
-            command line help. This should be as brief and descriptive
-            as possible.
-        format <Format> or <class Format>:
-            How to treat this option and any arguments it may require.
-        doc <str>:
-            User friendly help text for the option. '' means use docs
-            from the Format.
-        recurring = False <bool>:
-            Do we accept multiple (1 or more consecutive) occurrences for
-            this arg? With recurring = True then the .parse() method will
-            consume all argument items fed to it and return a list of
-            parsed values. There can be at most one recurring positional
-            argument, and, if present, it must be the last one.
-        optional = False <bool>:
-            Do we require this arg on the command line? Optional positional
-            arguments must be added after the required ones. The
-            .parseargs() method will return None for unused optional
-            positional arguments, or a list of length 0 if the optional
-            positional argument is recurring.
-        NOTE:
-            This method is a convenience method for
-            .addposarg(tui.PositionalArgument(...))
+                   optional=False,
+                   docs=None):
+        """Create a positional argument and add it to the user interface.
 
+        This is a convenience method for .addposarg(PositionalArgument(...))
+        and takes the same arguments.
+         
+        Optional positional arguments must be added after the required ones. 
+        The user interface can have at most one recurring positional argument, 
+        and if present, that argument must be the last one.
+
+        name is the name of the positional argument. Must be at least length 2,
+        must start and end with a letter or number and may contain letters, 
+        numbers, underscores and hyphens in between.
+        
+        format should be a formats.Format subclass or instance, and determines
+        how this positional argument behaves and what arguments it may require. 
+        The name of one of the formats in the tui.formats module is also 
+        accepted.
+        
+        docs is user friendly help text for the option. None means use 
+        format.docs.
+        
+        If recurring is true, this positional argument can be used multiple 
+        times on the command line, and .parse() will consume all arguments fed to it.
+        
+        If optional is true, the user is permitted to omit this argument from 
+        the command line?
         """
-        o = PositionalArgument(name, format, doc, recurring, optional)
-        self.appendposarg(o)
+        self.addposarg(PositionalArgument(name, format, recurring, optional, docs))
 
-    def readdocs(self, file=None):
-        """Read program documentation from a docparser compatible file.
-        ARGS:
-        file = None <str> or None:
-            The doc file to parse. None means use the default from
-            self.sDocsFile, and do nothing if it's ''.
+    def readdocs(self, docsfiles):
+        """Read program documentation from a DocParser compatible file.
 
+        docsfiles is a list of paths to potential docsfiles: parse if present.
+        A string is taken as a list of one item.
         """
-        if file is None:
-            file = self.sDocsFile
-            if not file:
-                return
-        oDocs = docparser.parse(file)
-        if oDocs.progname():
-            self.setprogname(oDocs.progname())
-        if oDocs.version():
-            self.setversion(oDocs.version())
-        if oDocs.programmer():
-            self.setprogrammer(oDocs.programmer())
-        if oDocs.title():
-            self.settitle(oDocs.title())
-        if oDocs.description():
-            self.setdescription(oDocs.description())
-        if oDocs.command():
-            self.setcommand(oDocs.command())
-        elif oDocs.progname():
-            self.setcommand(''.join(oDocs.progname().lower().split()))
-        if oDocs.usage():
-            self.setusage(oDocs.usage())
-        if oDocs.contact():
-            self.setcontact(oDocs.contact())
-        if oDocs.copyright():
-            self.setcopyright(oDocs.copyright())
-        if oDocs.additional():
-            self.setadditionaldocs(oDocs.additional())
-        if oDocs.general():
-            self.setgeneraldocs(oDocs.general())
-        if oDocs.notes():
-            self.setnotedocs(oDocs.notes())
-        for sOption, sDocs in oDocs.options().iteritems():
-            if not sOption in self.dsoOptions:
-                sErrorMsg = "The option %s does not exist."
-                sErrorMsg %= repr(sOption)
-                raise DocumentationError(message=sErrorMsg)
-            self.dsoOptions[sOption].setdocs(sDocs % self.dssDocVars)
-        lsPosArgs = map(lambda x: x.name(), self.loPositionalArgs)
-        for sPosArg, sDocs in oDocs.arguments().iteritems():
-            if not sPosArg in lsPosArgs:
-                sErrorMsg = "The positional argument %s does not exist."
-                sErrorMsg %= repr(sPosArg)
-                raise DocumentationError(message=sErrorMsg)
-            self.loPositionalArgs[lsPosArgs.index(sPosArg)].setdocs(sDocs % self.dssDocVars)
-        for sFile, lsDocs in oDocs.files().iteritems():
-            self.setfiledocs(sFile, lsDocs)
+        updates = DocParser()
+        for docsfile in _list(docsfiles):
+            if os.path.isfile(docsfile):
+                updates.parse(docsfile)
+        self.docs.update((k, _docs(updates[k], self.docvars)) for k in self.docs if updates.blocks[k])
+        for name, text in updates['parameters'].items():
+            if name in self:
+                self.getparam(name).docs = text[0] % self.docvars
+            elif name not in self.ignore:
+                raise ValueError("parameter %r does not exist" % name)
 
     def addconfigfiledocs(self):
-        lsPaths = self.lsConfigFiles
-        lsSections = self.lsSections
-        lsDocs = ["You can put frequently used command line parameters here to avoid having to retype them. %(progname)s will look for copies of this file in the following loctions, and in the following order:"]
-        c = lambda x,y:"  %s. %s." % (x, repr(y))
-        lsDocs.extend(map(c, range(1, len(lsPaths) +1), lsPaths))
-        lsDocs.append('')
-        lsDocs.append("The following file sections will be parsed while reading the above files, and in the following order:")
-        c = lambda x,y:"  %s. [%s]" % (x, y)
-        lsDocs.extend(map(c, range(1, len(lsSections) +1), lsSections))
-        lsDocs.append('')        
-        lsDocs.append("The [DEFAULT] section is always read (if it's present), and it is read as if its contents were copied to the beginning of all other sections. If an option is set more than once then the latest found value will be used. Settings passed on the command line override any settings found in config files.")
-        lsDocs.append('')        
-        lsDocs.append('SYNTAX:')        
-        lsDocs.append('  The syntax used is the one common in Windows .ini files with [Sections] and option:value pairs. Example:')        
-        lsDocs.append('    [Section Name]')        
-        lsDocs.append('    option1: value %%(option2)s ; comment')        
-        lsDocs.append('    option2= value # comment')
-        lsDocs.append('')
-        lsDocs.append('  Option Names:')        
-        lsDocs.append('    Option names are case sensitive, and in order for them to be to be valid they must be exactly the same as the long names of the command line options.')
-        lsDocs.append('')
-        lsDocs.append('  Formatting vs Nonformatting Options:')
-        lsDocs.append('    In the example, the value of option2 is used to format the value of option1, while option1 is not used to format the value of any other option in the section. option1 is therefore called a nonformatting option while option2 is called a formatting option. The names for all nonformatting options must be valid for the program, while the names of formatting options may or may not be valid. If they are, then their values will be used in the program settings. Otherwise they will only be used for formatting.')
-        lsDocs.append('')
-        lsDocs.append('  Values:')
-        lsDocs.append('    Input values exactly the same way as you would on the command line, except in the case of flags where the values "1", "Yes", "True" and "On" (case insensitive) mean setting the flag to True, and where the values "0", "No", "False" and "Off" mean setting the flag to False. Use "" for passing an empty string.')
-        lsDocs.append('')
-        self.dslsFileDocs['CONFIGFILE'] = lsDocs
+        docs = ["A %(progname)s configuration file. %(progname)s will look configfiles in the following loctions, and in the following order:" % self.docvars]
+        docs.extend("  %s. %s." % (i + 1, p) for i, p in enumerate(self.configfiles))
+        docs.append('')
+        docs.append("The following sections will be parsed, and in the following order:")
+        docs.extend("  %s. %s." % (i + 1, s) for i, s in enumerate(self.sections))
+        docs.append('')        
+        docs.append("The [DEFAULT] section (note uppercase) is always read if present, and it is read as if its contents were copied to the beginning of all other sections. Settings on the command line override any settings found in configfiles.")
+        docs.append('')        
+        docs.append('SYNTAX:')        
+        docs.append("  The syntax is similar to what you would find in Microsoft Windows .ini files, with [Sections] and option:value pairs. Specifically, it is a case sensitive version of python's ConfigParser. Example:")        
+        docs.append('    [Section Name]')        
+        docs.append('    option1: value %(option2)s ; comment')        
+        docs.append('    option2= value # comment')
+        docs.append('')
+        docs.append('  Names:')
+        ignore = ''
+        if self.ignore:
+            ignore = (' %(progname)s ignores the following names: ' % self.docvars + 
+                      ', '.join(repr(name) for name in self.ignore) + 
+                      '. Note that these may likely still be used by other programs that use the same configfile.')
+        docs.append('    Section and option names are case sensitive, and for options, only the long variant is valid (and not -a style abbreviations).' + ignore)
+        docs.append('')
+        docs.append('  Formatting vs Nonformatting Options:')
+        docs.append('    In the example, the value of option2 is used to format the value of option1, while option1 is not used to format the value of any other option in the section. option1 is therefore called a nonformatting option while option2 is called a formatting option. The names for all nonformatting options must be valid for the program, while the names of formatting options may or may not be valid. If they are, then their values will be used in the program settings. Otherwise they will only be used for formatting.')
+        docs.append('')
+        docs.append('  Values:')
+        docs.append('    Type values exactly as you would on the command line, except in the case of flags where the values "1", "Yes", "True" and "On" (case insensitive) mean setting the flag to True, and where the values "0", "No", "False" and "Off" mean setting the flag to False. Use "" for passing an empty string.')
+        docs.append('')
+        self.docs['files']['CONFIGFILE'] = docs
 
     def parsefiles(self, files=None, sections=None):
-        """Parse option settings from files. 
-        ARGS:
+        """Parse configfiles. 
         files <list str>, <str> or None:
-            What files to parse. None means use self.lsConfigFiles. New
+            What files to parse. None means use self.configfiles. New
             values override old ones. A string value will be interpreted
-            as a list of one item. May contain docvar formatters.
+            as a list of one item.
         sections <list str>, <str> or None:
             Which sections to parse from the files. None means use
-            self.lsSections. A string value will be interpreted as a list
-            of one item. May contain docvar formatters. The [DEFAULT]
+            self.sections. A string value will be interpreted as a list
+            of one item. The [DEFAULT]
             section is always read, and it is read as if its contents were
             copied to the beginning of all other sections.
             
         """
-        if not files:
-            files = self.lsConfigFiles
-        elif isinstance(files, str):
-            files = [files]
-        if not sections:
-            sections = self.lsSections
-        elif isinstance(sections, str):
-            sections = [sections]
-        for sFile in files:
-            sFile = sFile % self.dssDocVars
-            o = StrictConfigParser()
-            o.read(sFile)
-            for sSection in sections:
-                sSection = sSection % self.dssDocVars
-                if not o.has_section(sSection):
+        files = _list(files, self.configfiles)
+        sections = _list(sections, self.sections)
+        for file in files:
+            parser = StrictConfigParser()
+            parser.read(file)
+            for section in sections:
+                if not parser.has_section(section):
                     continue
-                for sUnusedOption in o.unusedoptions(sSection):
-                    if sUnusedOption not in self.dsoOptions:
-                        sErrorMsg = "The option %s in section [%s] of file %s does not exist."
-                        sErrorMsg %= (repr(sUnusedOption), sSection, repr(sFile))
-                        raise InvalidOptionError(message=sErrorMsg)
-                for sOption in o.options(sSection):          
-                    if sOption in self.dsoOptions:
-                        if self.dsoOptions[sOption].reserved():
-                            sErrorMsg = "The option %s in section [%s] of file %s is reserved for command line use."
-                            sErrorMsg %= (repr(sUnusedOption), sSection, repr(sFile))
-                            raise ReservedOptionError(message=sErrorMsg)
-                        sValue = o.get(sSection, sOption)
-                        self.dsoOptions[sOption].parsestr(sValue, sOption, '%s [%s]' % (repr(sFile), sSection))
+                for unused in parser.unusedoptions(section):
+                    if unused not in self.options and unused not in self.ignore: 
+                        templ = "The option %s in section [%s] of file %s does not exist."
+                        raise InvalidOption(unused, message=templ % (unused, section, file))
+                for name in parser.options(section):          
+                    if name in self.options:
+                        if self.options[name].reserved():
+                            templ = "The option %s in section [%s] of file %s is reserved for command line use."
+                            raise ReservedOptionError(message=templ % (unused, section, file))
+                        value = parser.get(section, name)
+                        self.options[name].parsestr(value, name, '%r [%s]' % (file, section))
 
-    def _parseoptions(self, lsArgs, location):
+    def _parseoptions(self, argv, location):
         """Parse the options part of an argument list.
         IN:
         lsArgs <list str>:
             List of arguments. Will be altered.
         location <str>:
-            A user friendly string describing where the parser got this
-            data from.
+            A user friendly string describing where this data came from.
             
         """
-        loObservedNonRecurringOptions = []
-        while lsArgs:
-            if lsArgs[0].startswith('--'):
-                sOption = lsArgs.pop(0)
+        observed = []
+        while argv:
+            if argv[0].startswith('--'):
+                name = argv.pop(0)[2:]
                 # '--' means end of options.
-                if sOption == '--':
+                if not name:
                     break
-                if not sOption[2:] in self.dsoOptions:
-                    sErrorMsg = "The option %s does not exist." % sOption
-                    raise InvalidOptionError(message=sErrorMsg)
-                oOption = self[sOption[2:]]
-                if not oOption.recurring():
-                    if oOption in loObservedNonRecurringOptions:
-                        raise OptionRecurrenceError(sOption)
-                    loObservedNonRecurringOptions.append(oOption)
-                oOption.parse(lsArgs, sOption, location)
-            elif lsArgs[0].startswith('-'):
-                # A single - is not an abbreviation block.
-                if len(lsArgs[0]) == 1:
+                if name not in self.options:
+                    raise InvalidOption(name)
+                option = self.options[name]
+                if not option.recurring:
+                    if option in observed:
+                        raise OptionRecurrenceError(name)
+                    observed.append(option)
+                option.parse(argv, name, location)
+            elif argv[0].startswith('-'):
+                # A single - is not an abbreviation block, but the first positional arg.
+                if argv[0] == '-':
                     break
-                sBlock = lsArgs.pop(0)
-                # Abbrevs for Options that take values go last in the block.
-                for sAbbreviation in sBlock[1:-1]:
-                    if self.dsoAbbreviations[sAbbreviation].nargs() != 0:
-                        raise BadAbbreviationBlockError(sAbbreviation, sBlock, "options that require value arguments must be last in abbreviation blocks")
+                block = argv.pop(0)[1:]
+                # Abbrevs for options that take values go last in the block.
+                for abbreviation in block[:-1]:
+                    if self.abbreviations[abbreviation].nargs != 0:
+                        raise BadAbbreviationBlock(abbreviation, block, "options that require value arguments must be last in abbreviation blocks")
                 # Parse individual options.
-                for sAbbreviation in sBlock[1:]:
-                    oOption = self.dsoAbbreviations[sAbbreviation]
-                    if not oOption.recurring():
-                        if oOption in loObservedNonRecurringOptions:
-                            raise OptionRecurrenceError(oOption.name())
-                        loObservedNonRecurringOptions.append(oOption)
-                    oOption.parse(lsArgs, '-' + sAbbreviation, location)
-            # only args that start with -- or - can be Options.
+                for abbreviation in block:
+                    option = self.abbreviations[abbreviation]
+                    if not option.recurring:
+                        if option in observed:
+                            raise OptionRecurrenceError(option.name)
+                        observed.append(option)
+                    option.parse(argv, '-' + abbreviation, location)
+            # only arguments that start with -- or - can be Options.
             else:
                 break
 
-    def _parsepositionalargs(self, lsArgs):
+    def _parsepositionalargs(self, argv):
         """Parse the positional arguments part of an argument list.
-        ARGS:
-        lsArgs <list str>:
+        argv <list str>:
             List of arguments. Will be altered.
-
         """
-        self.lxPositionalArgValues = []
-        for oPositionalArg in self.loPositionalArgs:
-            self.lxPositionalArgValues.append(oPositionalArg.parse(lsArgs))
-        if lsArgs:
-            sErrorMsg = 'This program accepts exactly %s positional arguments (%s given).'
-            sErrorMsg %= (len(self.loPositionalArgs), len(self.loPositionalArgs) + len(lsArgs))
-            raise PositionalArgumentError(message=sErrorMsg)
+        for posarg in self.positional_args:
+            posarg.parse(argv)
+        if argv:
+            if None in [p.nargs for p in self.positional_args]:
+                msg = '%s too many argument%s given'
+                plural_s = len(argv) > 1 and 's' or ''
+                raise BadNumberOfArguments(message=msg % (len(argv), plural_s))
+            msg = 'This program accepts exactly %s positional arguments (%s given).'
+            required = len([p.nargs for p in self.positional_args])
+            raise BadNumberOfArguments(message=msg % (required, required + len(argv)))
             
-    def parseargs(self, argv=None, location=''):
-        """Parse an argument vector.
-        ARGS:
+    def parseargs(self, argv=None, location='Command line.'):
+        """Parse command line arguments.
+        
         args <list str> or None:
-            The argument list to parse. None means use sys.argv. args[0] is
+            The argument list to parse. None means use a copy of sys.argv. argv[0] is
             ignored.
         location = '' <str>:
             A user friendly string describing where the parser got this
@@ -1174,264 +1357,67 @@ class tui:
             "Builtin default." otherwise.
             
         """
-        if not location:
-            if argv is None:
-                location = 'Command line.'
-            else:        
-                location = "Builtin default."
         if argv is None:
-            argv = sys.argv
-        lsArgs = list(argv[1:])
-        self._parseoptions(lsArgs, location)
-        self._parsepositionalargs(lsArgs)
-
-    def options(self):
-        """Return a dict of the names of the options and their values."""
-        d = {}
-        for o in self:
-            d[o.name()] = o.value()
-        return d
+            argv = list(sys.argv)
+        argv.pop(0)
+        self._parseoptions(argv, location)
+        self._parsepositionalargs(argv)
 
     def optionhelp(self, indent=0, maxindent=25, width=79):
-        """Return user friendly help on positional arguments in the program.        
+        """Return user friendly help on program options."""
+        def makelabels(option):
+            labels = '%*s--%s' % (indent, ' ', option.name)
+            if option.abbreviation:
+                labels += ', -' + option.abbreviation
+            return labels + ': '
+        docs = []
+        helpindent = _autoindent([makelabels(o) for o in self.options.values()], indent, maxindent)
+        for name in self.option_order:
+            option = self.options[name]
+            labels = makelabels(option)
+            helpstring = "%s(%s). %s" % (option.formatname, option.strvalue, option.docs)
+            wrapped = self._wrap_labelled(labels, helpstring, helpindent, width)
+            docs.extend(wrapped)
+        return '\n'.join(docs)
 
-        """
-        lsOut = []
-        iHelpIndent = 0
-        for sOption in self.lsOptionOrder:
-            o = self.dsoOptions[sOption]
-            sTags = '%*s--%s' % (indent, ' ', o.name())
-            if o.abbreviation():
-                sTags += ', -' + o.abbreviation()
-            sTags += ': '
-            iHelpIndent = max(iHelpIndent, len(sTags))
-        iHelpIndent = min(maxindent, iHelpIndent)
-        sI = ' ' * iHelpIndent
-        for sOption in self.lsOptionOrder:
-            o = self.dsoOptions[sOption]
-            sTags = '%*s--%s' % (indent, ' ', o.name())
-            if o.abbreviation():
-                sTags += ', -' + o.abbreviation()
-            sTags += ': '
-            sHelp = "%s(%s). %s" % (o.oFormat.shortname(), o.strvalue(), o.docs())
-            if len(sTags) > iHelpIndent:
-                ls = textwrap.wrap(sHelp, width = width, initial_indent = sI, subsequent_indent = sI)
-                lsOut.append(sTags)
-                lsOut.extend(ls)
-            elif len(sTags) == iHelpIndent:
-                ls = textwrap.wrap(sHelp, width = width, initial_indent = sI, subsequent_indent = sI)
-                sFirstLine = "%s%s" % (sTags, ls[0].lstrip())
-                lsOut.append(sFirstLine)
-                lsOut.extend(ls[1:])
-            else:
-                ls = textwrap.wrap(sHelp, width = width, initial_indent = sI, subsequent_indent = sI)
-                sFirstLine = "%s%*s%s" % (sTags, iHelpIndent - len(sTags), ' ', ls[0].lstrip())
-                lsOut.append(sFirstLine)
-                lsOut.extend(ls[1:])
-        return '\n'.join(lsOut)
-
-    def posargs(self):
-        """Return the current list of parsed values for positional arguments."""
-        return self.lxPositionalArgValues
-
-    def posarghelp(self, indent=0, maxsamelinelength=25, width=79):
+    def posarghelp(self, indent=0, maxindent=25, width=79):
         """Return user friendly help on positional arguments in the program."""
-        lsOut = []
-        iMaxNameLength = 0
-        for o in self.loPositionalArgs:
-            iMaxNameLength = max(iMaxNameLength, len(o.name()))
-        iDocIndent = min(iMaxNameLength + indent, maxsamelinelength) + 2
-        for o in self.loPositionalArgs:
-            sHelp = o.formatname() + '. ' + o.docs()
-            if len(o.name()) + 2 > iDocIndent:
-                sI = ' ' * iDocIndent
-                ls = textwrap.wrap(sHelp, width = width, initial_indent = sI,
-                                   subsequent_indent = sI)
-                lsOut.append("%s%s:" % (' ' * indent, o.name().upper()))
-                lsOut.extend(ls)
-            else:
-                sI = ' ' * iDocIndent
-                ls = textwrap.wrap(sHelp, width = width, initial_indent = sI,
-                                   subsequent_indent = sI)
-                sFirstLine = "%s%s:%s%s"
-                sFirstLine %= (' ' * indent, o.name().upper(),
-                               ' ' * (iDocIndent - indent - len(o.name()) - 1),
-                                      ls[0].lstrip())
-                lsOut.append(sFirstLine)
-                lsOut.extend(ls[1:])
-        return '\n'.join(lsOut)
+        docs = []
+        makelabel = lambda posarg: ' ' * indent + posarg.name.upper() + ': '
+        helpindent = _autoindent([makelabel(p) for p in self.positional_args], indent, maxindent)
+        for posarg in self.positional_args:
+            label = makelabel(posarg)
+            text = posarg.formatname + '. ' + posarg.docs
+            wrapped = self._wrap_labelled(label, text, helpindent, width)
+            docs.extend(wrapped)
+        return '\n'.join(docs)
         
-    def programmer(self):
-        return self.dssDocVars['programmer']
-
-    def setprogrammer(self, programmer):
-        if not isinstance(programmer, str):
-            raise ValueError("str value required.")
-        self.dssDocVars['programmer'] = programmer
-
-    def progname(self):
-        return self.dssDocVars['progname']
-
-    def setprogname(self, progname):
-        if not isinstance(progname, str):
-            raise ValueError("str value required.")
-        self.dssDocVars['progname'] = progname
-
-    def version(self):
-        return self.dssDocVars['version']
-
-    def setversion(self, version):
-        if not isinstance(version, str):
-            raise ValueError("str value required.")
-        self.dssDocVars['version'] = version
-
-    def command(self):
-        return self.dssDocVars['command']
-
-    def setcommand(self, command):
-        if not isinstance(command, str):
-            raise ValueError("str value required.")
-        self.dssDocVars['command'] = command
-
-    def title(self):
-        """Return the title line."""
-        return self.sTitle % self.dssDocVars
-
-    def settitle(self, title):
-        if not isinstance(title, str):
-            raise ValueError("str value required.")
-        self.sTitle = title
-
-    def description(self):
-        """Return the description line."""
-        return self.sDescription % self.dssDocVars
-
-    def setdescription(self, description):
-        if not isinstance(description, str):
-            raise ValueError("str value required.")
-        self.sDescription = description
-
-    def usage(self):
-        """Return the usage string. If it's '' auto generate a good one."""
-        if self.sUsage:
-            return self.sUsage % self.dssDocVars
-        sUsage = '%(command)s <OPTIONS>' % self.dssDocVars
-        iOptionals = 0
-        for oPositionalArgument in self.loPositionalArgs:
-            sUsage += ' '
-            if oPositionalArgument.optional():
-                sUsage += "[" 
-                iOptionals += 1
-            sUsage += oPositionalArgument.name().upper()
-            if oPositionalArgument.recurring():
-                sUsage += ' [%s2 [...]]' % oPositionalArgument.name().upper()
-        sUsage += ']' * iOptionals
-        return sUsage
-            
-    def setusage(self, usage):
-        if not isinstance(usage, str):
-            raise ValueError("str value required.")
-        self.sUsage = usage
-
-    def contact(self):
-        """Return the contact information as a list of indented paragraphs."""
-        return map(lambda x: x % self.dssDocVars, self.lsContact)
-
-    def setcontact(self, text):
-        """Update the contact information.
-        ARGS:
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
-
-        """
-        if isinstance(text, str):
-            text = [text]
-        self.lsContact = text
-
-    def copyright(self):
-        """Return the list of indented paragraphs that form the general docs."""
-        return map(lambda x: x % self.dssDocVars, self.lsCopyright)
-
-    def setcopyright(self, text):
-        """Update the copyright information.
-        IN:
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
-
-        """
-        if isinstance(text, str):
-            text = [text]
-        self.lsCopyright = text
-
-    def generaldocs(self):
-        """Return the list of indented paragraphs that form the general docs."""
-        return map(lambda x: x % self.dssDocVars, self.lsGeneralDocs)
-
-    def setgeneraldocs(self, text):
-        """Update the general documentation.
-        ARGS:
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
-
-        """
-        if isinstance(text, str):
-            text = [text]
-        self.lsGeneralDocs = text
-
-    def additionaldocs(self):
-        """Return the additional docs as a list of indented paragraphs."""
-        return map(lambda x: x % self.dssDocVars, self.lsAdditionalDocs)
-
-    def setadditionaldocs(self, text):
-        """Update the additional documentation.
-        ARGS:
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
-
-        """
-        if isinstance(text, str):
-            text = [text]
-        self.lsAdditionalDocs= text
-
-    def notedocs(self):
-        """Return the list of indented paragraphs that form the note docs."""
-        return map(lambda x: x % self.dssDocVars, self.lsNoteDocs)
-
-    def setnotedocs(self, text):
-        """Update the documentation notes.
-        ARGS:
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
-
-        """
-        if isinstance(text, str):
-            text = [text]
-        self.lsNoteDocs = text
-
-    def filedocs(self, file):
-        """Return docs for a specific file as a list of indented paragraphs."""
-        return map(lambda x: x % self.dssDocVars, self.dslsFileDocs[file])
-
-    def setfiledocs(self, name, text):
-        """Update the docs for a specific program file.
-        ARGS:
-        name <str>:
-            Internal name of the file in question.
-        text <list str> or <str>:
-            The new info as a list of indented paragraphs. String values
-            are interpreted as a list of one indented paragraph.
+    def format_usage(self, usage=None):
+        """Return a formatted usage string. 
         
+        If usage is None, use self.docs['usage'], and if that is also None, 
+        generate one.
         """
-        if isinstance(text, str):
-            text = [text]
-        self.dslsFileDocs[name] = text
+        if usage is None:
+            usage = self.docs['usage']
+        if usage is not None:
+            return usage[0] % self.docvars
+        usage = self.docvars['command']
+        if self.options:
+            usage += ' <OPTIONS>'
+        optional = 0
+        for posarg in self.positional_args:
+            usage += ' '
+            if posarg.optional:
+                usage += "[" 
+                optional += 1
+            usage += posarg.name.upper()
+            if posarg.recurring:
+                usage += ' [%s2 [...]]' % posarg.name.upper().replace('-', '_')
+        usage += ']' * optional
+        return usage
 
-    def _wrapindentedparagraph(self, text, indent=0, width=0):
+    def _wrap(self, text, indent=0, width=0):
         """Textwrap an indented paragraph.
         ARGS:
         width = 0 <int>:
@@ -1439,40 +1425,29 @@ class tui:
             self.iMaxHelpWidth.
 
         """
+        text = _list(text)
         if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        sParagraph = text.lstrip()
-        sI = ' ' * (len(text) - len(sParagraph) + indent)
-        ls = textwrap.wrap(sParagraph, width=width, initial_indent=sI, subsequent_indent=sI)
-        if ls:
-            lsOut.extend(ls)
-        else:
-            lsOut.append('')
-        return '\n'.join(lsOut)
+            width = self.width
+        paragraph = text[0].lstrip()
+        s = ' ' * (len(text[0]) - len(paragraph) + indent)
+        wrapped = textwrap.wrap(paragraph.strip(), width, initial_indent=s, subsequent_indent=s)
+        return '\n'.join(wrapped)
 
-    def _wrapindentedtext(self, text, indent=0, width=0):
-        """Textwrap a list of indented paragraphs.
-        ARGS:
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
+    def _wraptext(self, text, indent=0, width=0):
+        """Shorthand for '\n'.join(self._wrap(par, indent, width) for par in text)."""
+        return '\n'.join(self._wrap(par, indent, width) for par in text)
 
-        """
+    def _wrap_labelled(self, label, helpstring, indent=0, width=0):
         if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        for sIndentedParagraph in text:
-            sParagraph = sIndentedParagraph.lstrip()
-            sI = ' ' * (len(sIndentedParagraph) - len(sParagraph) + indent)
-            ls = textwrap.wrap(sParagraph, width=width, initial_indent=sI, subsequent_indent=sI)
-            if ls:
-                lsOut.extend(ls)
-            else:
-                lsOut.append('')
-        return '\n'.join(lsOut)
+            width = self.width
+        s = ' ' * indent
+        wrapped = textwrap.wrap(helpstring, width, initial_indent=s, subsequent_indent=s)
+        if len(label) > indent:
+            return [label] + wrapped
+        wrapped[0] = label + ' ' * (indent - len(label)) + wrapped[0].lstrip()
+        return wrapped
 
-    def _wrapusage(self, width=0):
+    def _wrapusage(self, usage=None, width=0):
         """Textwrap usage instructions.
         ARGS:
         width = 0 <int>:
@@ -1481,11 +1456,16 @@ class tui:
 
         """
         if not width:
-            width = self.iMaxHelpWidth
-        return textwrap.fill('USAGE: ' + self.usage(), 
-                             width=width,
-                             subsequent_indent='  >>>   ')
+            width = self.width
+        return textwrap.fill('USAGE: ' + self.format_usage(usage), width=width, subsequent_indent='    ...')
 
+    def versionhelp(self, width=0):
+        """Return self.docvars['version']. 
+        
+        width is ignored and is present only for symmetry with other help methods.
+        """
+        return self.docvars['version']
+        
     def shorthelp(self, width=0):
         """Return brief help containing Title and usage instructions.
         ARGS:
@@ -1494,165 +1474,193 @@ class tui:
             self.iMaxHelpWidth.
 
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        lsOut.append(self._wrapindentedparagraph(self.title()))
-        if self.description():
-            lsOut.append(self._wrapindentedparagraph(self.description(), indent=2, width=width))
-        lsOut.append('')
-        lsOut.append(self._wrapusage(width=width))
-        lsOut.append('')
-        return '\n'.join(lsOut)
+        out = []
+        out.append(self._wrap(self.docs['title'], width=width))
+        if self.docs['description']:
+            out.append(self._wrap(self.docs['description'], indent=2, width=width))
+        out.append('')
+        out.append(self._wrapusage(width=width))
+        out.append('')
+        return '\n'.join(out)
 
+    def deleteme_help(self, width=0):
+        """Return the standard formatted command line help for the prog.
+
+        width is maximum allowed page width, use self.width if 0.
+        """
+        out = []
+        out.append(self._wrap(self.docs['title'], width=width))
+        if self.docs['description']:
+            out.append(self._wrap(self.docs['description'], indent=2, width=width))
+        out.append('')
+        out.append(self._wrapusage(width=width))
+        if self.positional_args:            
+            out.append('')
+            out.append('ARGUMENTS:')
+            out.append(self.posarghelp(indent=2, width=width))
+        if self.options:
+            out.append('')
+            out.append('OPTIONS:')
+            out.append(self.optionhelp(indent=2, width=width))
+        if self.docs['general']:
+            out.append('')
+            out.append(self._wraptext(self.docs['general'], indent=2, width=width))
+        return '\n'.join(out)
+
+    def customhelp(self, help_sections, width=0):
+        out = []
+        def heading(name):
+            out and not out[-1].isspace() and out.append('')
+            name and out.append(name.upper() + ':')
+        for section in help_sections:
+            if section == 'title':
+                out.append(self._wrap(self.docs[section], width=width))
+            elif section == 'description':
+                if self.docs[section]:
+                    out.append(self._wrap(self.docs[section], width=width, indent=2))
+            elif section == 'usage':
+                heading(None)
+                out.append(self._wrapusage(width=width))
+            elif section == 'arguments':
+                if self.positional_args:
+                    heading(section)
+                    out.append(self.posarghelp(indent=2, width=width))
+            elif section == 'options':
+                if self.options:
+                    heading(section)
+                    out.append(self.optionhelp(indent=2, width=width))
+            elif section == 'general':
+                if self.docs[section]:
+                    heading(None)
+                    out.append(self._wraptext(self.docs[section], width=width))
+            elif section == 'files':
+                if self.docs[section]:
+                    heading(section)
+                    for file, docs in self.docs[section].items():
+                        out.append('  %s:' % file)
+                        out.append(self._wraptext(docs, indent=4, width=width))
+            else:
+                if self.docs[section]:
+                    heading(section)
+                    out.append(self._wraptext(self.docs[section], indent=2, width=width))
+        return '\n'.join(out)
+    
     def help(self, width=0):
         """Return the standard formatted command line help for the prog.
-        ARGS:
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
 
+        width is maximum allowed page width, use self.width if 0.
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        lsOut.append(self._wrapindentedparagraph(self.title(), width=width))
-        if self.description():
-            lsOut.append(self._wrapindentedparagraph(self.description(), indent=2, width=width))
-        lsOut.append('')
-        lsOut.append(self._wrapusage(width=width))
-        if self.loPositionalArgs:            
-            lsOut.append('')
-            lsOut.append('ARGUMENTS:')
-            lsOut.append(self.posarghelp(indent=2, width=width))
-        if self.dsoOptions:
-            lsOut.append('')
-            lsOut.append('OPTIONS:')
-            lsOut.append(self.optionhelp(indent=2, width=width))
-        if self.lsGeneralDocs:
-            lsOut.append('')
-            lsOut.append(self._wrapindentedtext(self.generaldocs(), indent=2, width=width))
-        if self.lsNoteDocs:
-            lsOut.append('NOTE:')
-            lsOut.append(self._wrapindentedtext(self.notedocs(), indent=2, width=width))
-        return '\n'.join(lsOut)
-
+        return self.customhelp(self.help_sections, width)
+                
     def longhelp(self, width=0):
         """Return the standard formatted help text for the prog. 
         
         This should have approximately the amount of information as you'd 
         expect in a man page.
-        IN:
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
 
+        width is maximum allowed page width, use self.width if 0.
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        lsOut.append(self._wrapindentedparagraph(self.title(), width=width))
-        if self.description():
-            lsOut.append(self._wrapindentedparagraph(self.description(), indent=2, width=width))
-        lsOut.append('')
-        if self.lsContact:
-            lsOut.append('CONTACT:')
-            lsOut.append(self._wrapindentedtext(self.contact(), indent=2, width=width))
-        if self.lsCopyright:
-            lsOut.append('COPYRIGHT:')
-            lsOut.append(self._wrapindentedtext(self.copyright(), indent=2, width=width))
-        lsOut.append(self._wrapusage())
-        if self.loPositionalArgs:            
-            lsOut.append('')
-            lsOut.append('ARGUMENTS:')
-            lsOut.append(self.posarghelp(indent=2, width=width))
-        if self.dsoOptions:
-            lsOut.append('')
-            lsOut.append('OPTIONS:')
-            lsOut.append(self.optionhelp(indent=2, width=width))
-            lsOut.append('')
-        if self.lsGeneralDocs:
-            lsOut.append(self._wrapindentedtext(self.generaldocs(), indent=2, width=width))
-        if self.lsAdditionalDocs:
-            lsOut.append('ADDITIONAL:')
-            lsOut.append(self._wrapindentedtext(self.additionaldocs(), indent=2, width=width))
-        if self.lsNoteDocs:
-            lsOut.append('NOTE:')
-            lsOut.append(self._wrapindentedtext(self.notedocs(), indent=2, width=width))
-        if self.dslsFileDocs:
-            lsOut.append('FILES:')
-            for sFile, lsDocs in self.dslsFileDocs.iteritems():
-                lsOut.append('  %s:' % (sFile % self.dssDocVars))
-                lsOut.append(self._wrapindentedtext(self.filedocs(sFile), indent=4, width=width))
-        return '\n'.join(lsOut)
+        return self.customhelp(self.longhelp_sections, width)
+                
+    def deleteme_longhelp(self, width=0):
+        """Return the standard formatted help text for the prog. 
+        
+        This should have approximately the amount of information as you'd 
+        expect in a man page.
 
-    def strsettings(self, indent=0, maxindent=25, width=79):
+        width is maximum allowed page width, use self.width if 0.
+        """
+        out = []
+        out.append(self._wrap(self.docs['title'], width=width))
+        if self.docs['description']:
+            out.append(self._wrap(self.docs['description'], indent=2, width=width))
+        if self.docs['contact']:
+            out.append('')
+            out.append('CONTACT:')
+            out.append(self._wraptext(self.docs['contact'], indent=2, width=width))
+        if self.docs['website']:
+            out.append('')
+            out.append('WEBSITE:')
+            out.append(self._wraptext(self.docs['website'], indent=2, width=width))
+        if self.docs['download']:
+            out.append('')
+            out.append('DOWNLOAD:')
+            out.append(self._wraptext(self.docs['download'], indent=2, width=width))
+        if self.docs['copyright']:
+            out.append('')
+            out.append('COPYRIGHT:')
+            out.append(self._wraptext(self.docs['copyright'], indent=2, width=width))
+        if self.docs['license']:
+            out.append('')
+            out.append('LICENSE:')
+            out.append(self._wraptext(self.docs['license'], indent=2, width=width))
+        out.append('')
+        out.append(self._wrapusage(width=width))
+        if self.positional_args:            
+            out.append('')
+            out.append('ARGUMENTS:')
+            out.append(self.posarghelp(indent=2, width=width))
+        if self.options:
+            out.append('')
+            out.append('OPTIONS:')
+            out.append(self.optionhelp(indent=2, width=width))
+        if self.docs['general']:
+            out.append('')
+            out.append(self._wraptext(self.docs['general'], indent=2, width=width))
+        if self.docs['additional']:
+            out.append('')
+            out.append('ADDITIONAL:')
+            out.append(self._wraptext(self.docs['additional'], indent=2, width=width))
+        if self.docs['files']:
+            out.append('FILES:')
+            for file, docs in self.docs['files'].items():
+                out.append('  %s:' % file)
+                out.append(self._wraptext(docs, indent=4, width=width))
+        return '\n'.join(out)
+
+    def strsettings(self, indent=0, maxindent=25, width=0):
         """Return user friendly help on positional arguments.        
-        ARGS:
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
 
+        indent is the number of spaces preceeding the text on each line. 
+        
+        The indent of the documentation is dependent on the length of the 
+        longest label that is shorter than maxindent. A label longer than 
+        maxindent will be printed on its own line.
+        
+        width is maximum allowed page width, use self.width if 0.
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        iIndent = 0
-        for sOption in self.lsOptionOrder:
-            o = self.dsoOptions[sOption]
-            sTag = '%*s%s: ' % (indent, ' ', o.name())
-            iIndent = max(iIndent, len(sTag))
-        iIndent = min(maxindent, iIndent)
-        sI = ' ' * iIndent
-        for sOption in self.lsOptionOrder:
-            o = self.dsoOptions[sOption]
-            sTag = '%*s%s: ' % (indent, ' ', o.name())
-            sSettings = "%s(%s): %s" % (o.oFormat.sShortName, o.strvalue(), o.location())
-            if len(sTag) > iIndent:
-                ls = textwrap.wrap(sSettings, width=width, initial_indent=sI, subsequent_indent=sI)
-                lsOut.append(sTag)
-                lsOut.extend(ls)
-            elif len(sTag) == iIndent:
-                ls = textwrap.wrap(sSettings, width=width, initial_indent=sI, subsequent_indent=sI)
-                sFirstLine = "%s%s" % (sTag, ls[0].lstrip())
-                lsOut.append(sFirstLine)
-                lsOut.extend(ls[1:])
-            else:
-                ls = textwrap.wrap(sSettings, width=width, initial_indent=sI, subsequent_indent=sI)
-                sFirstLine = "%s%*s%s" % (sTag, iIndent - len(sTag), ' ', ls[0].lstrip())
-                lsOut.append(sFirstLine)
-                lsOut.extend(ls[1:])
-        return '\n'.join(lsOut)
+        out = []
+        makelabel = lambda name: ' ' * indent + name + ': '
+        settingsindent = _autoindent([makelabel(s) for s in self.options], indent, maxindent)
+        for name in self.option_order:
+            option = self.options[name]
+            label = makelabel(name)
+            settingshelp = "%s(%s): %s" % (option.formatname, option.strvalue, option.location)
+            wrapped = self._wrap_labelled(label, settingshelp, settingsindent, width)
+            out.extend(wrapped)
+        return '\n'.join(out)
 
-    def settings(self, width=79):
-        """Return a list of program options, their values and origins.
-        ARGS:
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
-
+    def settingshelp(self, width=0):
+        """Return a summary of program options, their values and origins.
+        
+        width is maximum allowed page width, use self.width if 0.
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        lsOut = []
-        lsOut.append(self.title())
-        if self.description():
-            lsOut.append('  ' + self.description())
-        lsOut.append('')
-        lsOut.append('SETTINGS:')
-        lsOut.append(self.strsettings(indent=2, width=width))
-        lsOut.append('')
-        return '\n'.join(lsOut)
+        out = []
+        out.append(self._wrap(self.docs['title'], width=width))
+        if self.docs['description']:
+            out.append(self._wrap(self.docs['description'], indent=2, width=width))
+        out.append('')
+        out.append('SETTINGS:')
+        out.append(self.strsettings(indent=2, width=width))
+        out.append('')
+        return '\n'.join(out)
 
-    def initprog(self,
-                 debugparser=False,
-                 docsfile=None,
-                 configfiles=None,
-                 sections=None,
-                 argv=None,
-                 showusageonnoargs=False,
-                 width=None,
-                 helphint="Use with --help or --HELP for more information.\n"):
+    def launch(self,
+               argv=None,
+               showusageonnoargs=False,
+               width=0,
+               helphint="Use with --help or --HELP for more information.\n",
+               debug_parser=False):
         """Do the usual stuff to initiallize the program.
         
         Read docs and config files, parse arguments and print help, usage, 
@@ -1670,8 +1678,8 @@ class tui:
             Read a specific set of config sections. None means use the
             default.
         argv = None <list str> or None:
-            Use this argument list. None means use sys.argv. argv[0] is 
-            ignored.
+            Use this argument list. Will be modified. None means use copy of 
+            sys.argv. argv[0] is ignored.
         showusageonnoargs = True <bool>:
             Show usage and exit if the user didn't give any args. Should be
             set to False if there are no required PositionalArgs in the UI.
@@ -1685,45 +1693,29 @@ class tui:
             of readability.
 
         """
-        if not width:
-            width = self.iMaxHelpWidth
-        if docsfile is None:
-            docsfile = self.sDocsFile
-        if docsfile:
-            self.readdocs(docsfile)
-        if showusageonnoargs:
-            bPrintUsageAndExit = False
-            if argv is None:
-                if len(sys.argv) == 1:
-                    bPrintUsageAndExit = True
-            elif len(argv) == 0:
-                bPrintUsageAndExit = True
-            if bPrintUsageAndExit:
-                print self.shorthelp()
-                if helphint:
-                    print self._wrapindentedparagraph(helphint, indent=2, width=width)
-                sys.exit(0)
-        bParseError = False
+        self.readdocs(self.docsfiles)
+        if showusageonnoargs and len(argv) == 1:
+            print self.shorthelp(width=width)
+            if helphint:
+                print self._wrap(helphint, indent=2, width=width)
+            sys.exit(0)
+        parsing_error = None
         try:
-            self.parsefiles(configfiles, sections)
-            self.parseargs(argv, 'Command line.')
-        except ParseError, e:
-            if debugparser:
+            self.parsefiles()
+            self.parseargs(argv)
+        except ParseError, parsing_error:
+            if debug_parser:
                 raise
-            bParseError = True
-        dsxOptions = self.options()
-        if self.sSettingsOption and dsxOptions[self.sSettingsOption]:
-            print self.settings()
-            sys.exit()
-        if self.sLongHelpOption and dsxOptions[self.sLongHelpOption]:
-            print self.longhelp()
-            sys.exit()
-        if self.sHelpOption and dsxOptions[self.sHelpOption]:
-            print self.help()
-            sys.exit()
-        if self.sVersionOption and dsxOptions[self.sVersionOption]:
-            print self.version()
-            sys.exit()
-        if bParseError:
-            print self.shorthelp()
-            sys.exit("ERROR: %s" % e)
+        for optiontype in ['help', 'longhelp', 'settings', 'version']:
+            name = self.basic_option_names.get(optiontype)
+            if name and self[name]:
+                methodname = optiontype.rstrip('help') + 'help'
+                print getattr(self, methodname)(width)
+                sys.exit()
+        if parsing_error:
+            self.graceful_exit(parsing_error, width)
+            
+    def graceful_exit(self, error_message, width=0):
+        print >> sys.stderr, self.shorthelp(width)
+        sys.exit("ERROR: %s" % error_message)
+        

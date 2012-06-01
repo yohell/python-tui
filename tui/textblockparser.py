@@ -13,434 +13,207 @@ __license__ = "MIT"
 
 import re
 
-class TextBlockParserError(Exception):
-    """
-    Base class for exceptions raised in BlockReader. 
-    """
-    def __init__ (self, msg):
-        self.sMessage = msg
+class ParseError(Exception):
+    def __init__(self, file, line, details, message=None):
+        if message is None:
+            message = "[%r:%s] %s" % (file, line, details)
+        elif file or line or details:
+            raise ValueError('use either default or custom error message, not both')
+        self.message = "[%r:%s] %s" % (file, line, details)
 
     def __str__ (self):
-        return self.sMessage    
+        return self.message    
 
-class ParseError(TextBlockParserError):
-    """\
-    Raised on errors occurring while parsing text block files.
-
-    """
-    def __init__(self, file, line, details):
-        self.sMessage = "[%s:%s] %s" % (repr(file), line, details)
-    
-
-class TextBlock:
-
-    def __init__(self, tabsize = 4):
-        """\
-        Base class for TextBlock objects. Do not instantiate directly.
-        Use a proper subclass instead.
-
+class TextBlock(object):
+    def __init__(self, tabsize=4):
         """
-        self.lsLines = []
-        self.iTabSize = tabsize
-        raise NotImplementedError("Do not instantiate directly. Use a proper subclass instead.")
-
+        tabsize > 0 replaces tab characters with that many spaces. Set <= 0 to 
+        disable.
+        """
+        self.lines = []
+        self.tabsize = tabsize
 
     def __len__(self):
-        return len(self.lsLines)
-
+        return len(self.lines)
     
-    def _expandtabs(self, line):
-        if self.iTabSize >= 0:
-            return line.replace('\t', ' '*self.iTabSize)        
-
+    def startblock(self):
+        pass
+    
     def addline(self, line):
-        """\
-        Add a line (no trailing newlines) to the text block.
-
-        """
-        line = self._expandtabs(line)
-        self.lsLines.append(line)
+        """Add a line (no trailing newlines) to the text block."""
+        self.lines.append(line)
 
     def text(self):
-        """\
-        Return the text in the block as a list of lines.
-
-        """
-        return self.lsLines
-
-    def tabsize(self):
-        return self.iTabSize
-
-    def reset(self):
-        self.__init__(self.iTabSize)
-
-        
-
-class RawText(TextBlock):
-    def __init__(self, tabsize = 4):
-        """\
-        Instantiate a RawText object.
-        IN:
-        tabsize <int>:
-            Replace tabs with how many spaces? Set < 0 to disable.
-
-        """
-        self.lsLines = []
-        self.iTabSize = tabsize
-
+        """Return the text in the block as a list of lines."""
+        return self.lines
 
 class SingleParagraph(TextBlock):
-
-    def __init__(self, tabsize = 4):
-        """\
-        Instantiate a SingleParagraph object.
-        IN:
-        tabsize <int>:
-            Replace tabs with how many spaces? Set < 0 to disable.
-
-        """
-        self.lsLines = []
-        self.iTabSize = tabsize
-
     def addline(self, line):
-        if not line.strip():
+        line = line.strip()
+        if not line:
             return
-        line = self._expandtabs(line)
-        if self.lsLines:
-            self.lsLines[0] += ' ' + line.strip()
-        else:
-            self.lsLines.append(line.strip())
+        self.lines.append(line)
 
     def text(self):
-        """\
-        Return the paragraph as a list of a single string.
-
-        """
-        return self.lsLines
-
-    
+        """Return the paragraph as a string."""
+        return [' '.join(self.lines)]
 
 class IndentedParagraphs(TextBlock):
-
-    def __init__(self, tabsize = 4):
-        """\
-        Instantiate an IndentedParagraphs object.
-        IN:
-        tabsize <int>:
-            Replace tabs with how many spaces? Set < 0 to disable.
-
-        """
-        self.lsLines = []
-        self.iTabSize = tabsize
-        self.iPreviousIndentLevel = -1
-        self.bKeepIndent = True
-        
+    def startblock(self):
+        self._previous_indent = -1
+        self._keep_indent = True
+    
     def addline(self, line):
-        """\
-        Add a line of text to the block.
-        IN:
-        line <str>:
-            The line that should be added.
-
-        """
-        line = self._expandtabs(line)
-        iIndentLevel = len(line) - len(line.lstrip())
-        sRStrippedLine = line.rstrip()
-
-        if sRStrippedLine.endswith('\\'):
-            sRStrippedLine = sRStrippedLine[:-1].rstrip()
-            bForceKeepNextIndent = True
+        if self.tabsize:
+            line = line.replace('\t', ' ' * self.tabsize)
+        indent = len(line) - len(line.lstrip())
+        rstripped = line.rstrip()
+        if rstripped.endswith('\\'):
+            rstripped = rstripped[:-1].rstrip()
+            keep_next_indent = True
         else:
-            bForceKeepNextIndent = False
-
-        if not sRStrippedLine:
-            self.lsLines.append(sRStrippedLine)
-            self.iPreviousIndentLevel = -1
-        elif self.bKeepIndent or iIndentLevel != self.iPreviousIndentLevel:
-            self.lsLines.append(sRStrippedLine)
-            self.iPreviousIndentLevel = iIndentLevel
+            keep_next_indent = False
+        if not rstripped:
+            self.lines.append(rstripped)
+            self._previous_indent = -1
+        elif self._keep_indent or indent != self._previous_indent:
+            self.lines.append(rstripped)
+            self._previous_indent = indent
         else:
-            self.lsLines[-1] += ' ' + sRStrippedLine.strip()
-
-        self.bKeepIndent = bForceKeepNextIndent
-
-
+            self.lines[-1] += ' ' + rstripped.strip()
+        self._keep_indent = keep_next_indent
         
     def text(self):
-        """\
-        Return the indented paragraphs as a list of strings.
+        """Return the indented paragraphs as a list of strings."""
+        return self.lines
 
-        """
-        return self.lsLines
-
-
-
-class UnlabelledTextBlockContainer:
-    def __init__(self, textblockclass, tabsize = 4):
-        """\
-        Instantiate a LabelledTextBlockContainer object.
-        IN:
-        tag = '' <str>:
-            The block start tag. 
-        textblockclass <class TextBlock>:
-            What type of text blocks to contain.
-        tabsize = 4 <int>:
-            Replace tabs with how many spaces? Set < 0 to disable.
-
-        """
-        self.oTextBlock = textblockclass(tabsize)
-
-    def __len__(self):
-        return len(self.oTextBlock)
-
-    def reset(self):
-        self.oTextBlock.reset()
-
-    def text(self):
-        return self.oTextBlock.text()
-
-    def addline(self, line):
-        #print repr(line)
-        self.oTextBlock.addline(line)
-        
-            
-
-class LabelledTextBlockContainer:
-    def __init__(self, textblockclass, tabsize = 4):
-        """\
-        Instantiate a LabelledTextBlockContainer object.
-        IN:
-        textblockclass <class TextBlock>:
-            What type of text blocks to contain.
-        tabsize = 4 <int>:
-            Replace tabs with how many spaces? Set < 0 to disable.
-
-        """
-        self.dsoTextBlocks = {}
-        self.cTextBlockClass = textblockclass
-        self.iTabSize = tabsize
-
-
-    def __getitem__(self, label):
-        return self.dsoTextBlocks[label]
-
-
-    def __iter__(self):
-        return self.dsoTextBlocks.__iter__()
-
-    def addlabel(self, label):
-        self.dsoTextBlocks[label] = self.cTextBlockClass(self.iTabSize)
-
-    def iteritems(self):
-        return self.dsoTextBlocks.iteritems()
-
-
-
-class Decommenter:
-    """\
-    Base class for Decommenters for TextBlockParsers.
-
-    """
-    def __init__(self):
-        """\
-        Do not instantiate directly. Use a subclass instead.
-
-        """
-        raise NotImplementedError("Do not instantiate directly. Use a subclass instead.")
-
-
+class Decommenter(object):
+    """Base class for Decommenters for TextBlockParsers."""
+    
     def decomment(self, line):
-        """\
-        Remove the comment parts from a line of text.
-        IN:
-        line <str>:
-            The line to decomment.
-        OUT:
-            A decommented string. Return None to indicate that the line
-            is completely commented out and that it should not be fed to
-            TextBlock storage.
+        """Remove the comment parts from a line of text.
 
+        Return None to indicate that the line is completely commented out and
+        that it should not be fed to TextBlock storage.
         """
 
 class UnescapedHashDecommenter(Decommenter):
-    """\
-    Dumb pseudo shell style decommenter that strips everything on a line
-    following non-escaped hash characters.
-
+    """Shell style unescaped hash line comments. 
+    
+    Use backslashes to escape # characters if you want to use them in text.
+    Backslashes have no special meaning anywhere else, but if you feel an urge
+    to have backslashes directly preceding hashes in your output, type twice as
+    many as you want, plus one more to keep the hash character from becoming a 
+    comment. Examples:   
+    
+    #       is a comment
+    \#      is a hash character.
+    \\#     is a backslash followed by comment.
+    \\\\\#  is two backslashes and a hash character.
+    \\\\\\# is three backslashes and a comment.
+    ...     you get the picture.
     """
-    def __init__(self):
-        self.rComment = re.compile(r'([^\\]|^)#')
 
     def decomment(self, line):
-        if not line:
-            return line
-        ls = self.rComment.split(line, 1)
-        if len(ls) == 1:
-            return line.replace('\#', '#')
-        sDecommentedLine = ls[0] + ls[1]
-        if not sDecommentedLine:
+        if line and line[0] == '#':
             return None
-        else:
-            return sDecommentedLine.replace('\#', '#')
-
-        
-
-class TextBlockParser:
-    def __init__(self, untaggedtextclass = IndentedParagraphs,
-                 decomment = True, tabsize = 4,
-                 decommenter = UnescapedHashDecommenter):
-        """\
-        Instantiate a TextBlockParser object.
-        IN:
-        untaggedtextclass = IndentedParagraphs <class TextBlock> or None:
-            What to do with text that appears before the first tagged
-            text block. None means raise a ParseError if any is found.
-        decomment = True <bool>:
-            Strip comments from the text?
-        tabsize = 4 <int>:
-            Convert tabs to this many spaces. Set < 0 to disable.
-        decommenter=UnescapedHashDecommenter <Decommenter> <class Decommenter>:
-            How should comments be removed?
-        
+        decomment = r'(\\*)\1(#.*|\\(#))'
+        # repl is a workaround for the fact that python <3.3 re gives None 
+        # rather than '' for nonmatching groups.
+        repl = lambda m: m.group(1) + (m.group(3) or '')
+        return re.sub(decomment, repl, line)
+    
+class TextBlockParser(object):
+    def __init__(self,
+                 untagged=IndentedParagraphs,
+                 decommenter=UnescapedHashDecommenter,
+                 tabsize=4,
+                 blocks=None,
+                 labelled_classes=None,
+                 names=None):
         """
-        if untaggedtextclass is None:
-            self.oUntaggedBlock = None
-        else:
-            self.oUntaggedBlock = UnlabelledTextBlockContainer(untaggedtextclass, tabsize)
-        self.bDeComment = decomment
-        self.iTabSize = tabsize
-        self.sLabel = ''
-        self.sBlock = ''
-        self.oCurrentBlock = self.oUntaggedBlock
-        self.dsoUnlabelledBlocks = {}
-        self.dsoLabelledBlocks = {}
-        self.dssNames = {}
-        if decommenter is None:
-            decommenter = UnescapedHashDecommenter()
-        elif isinstance(decommenter, type(Decommenter)):
+        untagged determines what to do with text before the first tagged text 
+        block and should be a TextBlock subclass, or None to raise ParseError.
+        
+        decommenter determines how to strip comments from the text. Set to None
+        to not decomment.
+        
+        tabsize > 0 replaces tab characters with that many spaces. Set <= 0 to 
+        disable.
+        """
+        if isinstance(untagged, type(TextBlock)):
+            untagged = untagged()
+        self.untagged = untagged 
+        if isinstance(decommenter, type(Decommenter)):
             decommenter = decommenter()
-        self.oDecommenter = decommenter
+        self.decommenter = decommenter
+        self.tabsize = tabsize
+        if blocks is None:
+            blocks = {}
+        self.blocks = blocks
+        if labelled_classes is None:
+            labelled_classes = dict()
+        self.labelled_classes = labelled_classes
+        if names is None:
+            names = dict((name.upper, name) for name in blocks)
+        self.names = names
 
+    def __getitem__(self, name):
+        if name in self.labelled_classes:
+            return dict((label, labelled_block.text()) for label, labelled_block in self.blocks[name].items())
+        return self.blocks[name].text()
 
-
-    def addblock(self, name, textblockclass, labelled = False, tag = None):
-        if name in self.dsoLabelledBlocks:
-            sErrorMsg = "The name %s is already in use by a previously added labelled block."
-            sErrorMsg %= repr(name)
-            raise BlockReaderError(sErrorMsg) 
-        elif name in self.dsoUnlabelledBlocks:
-            sErrorMsg = "The name %s is already in use by a previously added unlabelled block."
-            sErrorMsg %= repr(name)
-            raise BlockReaderError(sErrorMsg) 
-
+    def addblock(self, name, textblockclass, labelled=False, tag=None):
+        if name in self.blocks:
+            raise ValueError('name already in use') 
         if not tag:
             tag = name.upper()
-
-        if tag in self.dssNames:
-            sErrorMsg = "The name %s is already in use by the previously added block %s."
-            sErrorMsg %= (repr(name), repr(tag))
-            raise BlockReaderError(sErrorMsg) 
-
-        self.dssNames[tag] = name
-        
+        if tag in self.names:
+            raise ValueError('tag already in use') 
+        self.names[tag] = name
         if labelled:
-            self.dsoLabelledBlocks[name] = LabelledTextBlockContainer(textblockclass, self.iTabSize)
+            self.blocks[name] = dict()
+            self.labelled_classes[name] = textblockclass
         else:
-            self.dsoUnlabelledBlocks[name] = UnlabelledTextBlockContainer(textblockclass, self.iTabSize)
-
-
+            self.blocks[name] = textblockclass()
 
     def parse(self, file):
-        """\
-        Parse text blocks from a file.
-        IN:
-        file <str>:
-            The file to parse.
-
-        """
-        iLine = 0
-        f = open(file)
-        for sLine in f:
-            iLine += 1
-            sLine = sLine.rstrip('\n')
-            #print repr(sLine)
-            if self.bDeComment:
-                sLine = self.oDecommenter.decomment(sLine)
-                if sLine is None:
+        """Parse text blocks from a file."""
+        if isinstance(file, basestring):
+            file = open(file)
+        line_number = 0
+        label = None
+        block = self.untagged
+        for line in file:
+            line_number += 1
+            line = line.rstrip('\n')
+            if self.tabsize > 0:
+                line = line.replace('\t', ' ' * self.tabsize)
+            if self.decommenter:
+                line = self.decommenter.decomment(line)
+                if line is None:
                     continue
-            #print repr(sLine)
+            tag = line.split(':', 1)[0].strip()
+            # Still in the same block?
+            if tag not in self.names:
+                if block is None and not line.isspace():
+                    raise ParseError(file.name, line, "garbage before first block: %r" % line)
+                block.addline(line)
+                continue
+            # Open a new block.
+            name = self.names[tag]
+            label = line.split(':',1)[1].strip()
+            if name in self.labelled_classes:
+                if not label:
+                    raise ParseError(file.name, line, "missing label for %r block" % name)
+                block = self.blocks[name].setdefault(label, self.labelled_classes[name]())
+            else:
+                if label:
+                    msg = "label %r present for unlabelled block %r" % (label, name)
+                    raise ParseError(file.name, line_number, msg)
+                block = self.blocks[name]
+            block.startblock()
             
-            # Open a new text block?
-            sPutativeTag = sLine.split(':', 1)[0].strip()
-            if sPutativeTag in self.dssNames:
-                sTag = sPutativeTag
-                sName = self.dssNames[sTag]
-                sLabel = sLine.split(':',1)[1].strip()
-
-                if sName in self.dsoUnlabelledBlocks:
-                    if sLabel:
-                        sErrorMsg = "Label %s present for unlabelled block %s, tag: %s)."
-                        sErrorMsg %= (repr(sLabel), repr(sName), repr(sTag))
-                        raise ParseError(file, iLine, sErrorMsg)
-                    oBlock = self.dsoUnlabelledBlocks[sName]
-                    oBlock.reset()
-                        
-                else:
-                    if not sLabel:
-                        sErrorMsg = "Missing label for labelled block %s (Tag: %s)."
-                        sErrorMsg %= (repr(sName), repr(sTag))
-                        raise ParseError(file, iLine, sErrorMsg)
-                    
-                    oBlock = self.dsoLabelledBlocks[sName]
-                    if sLabel in oBlock:
-                        oBlock[sLabel].reset()
-                    else:
-                        oBlock.addlabel(sLabel)
-                        
-                self.sLabel = sLabel
-                self.oCurrentBlock = oBlock
-                
-
-            # Are we reading a labelled block?
-            elif self.sLabel:
-                self.oCurrentBlock[sLabel].addline(sLine)
-
-            # Are we reading an unlabelled block? May be allowed text
-            # before the first tagged block.
-            elif not self.oCurrentBlock is None:
-                #print "Its in an unlabelled block."
-                #print repr(sLine)
-                self.oCurrentBlock.addline(sLine)
-
-            # We're reading disallowed text before the first tagged block.
-            # Any non-whitespace here is an error.
-            elif sLine.strip():
-                sErrorMsg = "Garbage text before first block (%s)."
-                sErrorMsg %= repr(sLine)
-                raise ParseError(file, iLine, sErrorMsg)
-
-
-                    
-    def labelledblocks(self):
-        """\
-        Return the dict containing the labelled blocks.
-
-        """
-        return self.dsoLabelledBlocks
-
-    def unlabelledblocks(self):
-        """\
-        Return the dict containing the unlabelled blocks.
-
-        """
-        return self.dsoUnlabelledBlocks
-
-    def untaggedblock(self):
-        """\
-        Return the untagged block.
-
-        """
-        return self.oUntaggedBlock
+    def text(self):
+        return dict((name, self[name]) for name in self.blocks)
     
-
-

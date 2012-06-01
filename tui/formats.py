@@ -16,78 +16,30 @@ import re
 import shlex
 
 class FormatError(Exception):
-    """\
-    Base class for all exceptions raised in the formats module.
-    Do not instantiate directly. Use the proper subclass instead.
-
-    """
-    def __init__(self):
-        raise NotImplementedError("Do not instantiate directly. Use the proper subclass instead.")
-
+    """Base class for exceptions raised while converting arguments to values."""
     def __str__(self):
-        return self.sMessage
+        return self.message
+
+class BadArgument(FormatError):
+    """Raised when Formats are given incompatible literals."""
     
+    def __init__(self, argument, message):
+        """
+        value is the bad value or string literal, or a tui instance to use 
+        value[name].
+        """
+        self.argument = argument
+        self.message = message
 
+class BadNumberOfArguments(FormatError):
+    """Raised when the user has supplied the wrong number of arguments.""" 
 
-class DeveloperError(FormatError):
-    """\
-    Raised when a format is instantiated improperly.
-
-    """
-    def __init__(self, msg):
-        self.sMessage = msg
-
-    def __str__(self):
-        return self.sMessage
-    
-
-
-class BadNumberOfArgumentsError(FormatError):
-    """\
-    Raised when a Format parser has been given the wrong number of
-    arguments.
-
-    """
-    def __init__(self, format, required, supplied):
-        sErrorMsg = "%s requires %s arguments and got %s."
-        sErrorMsg %= (format, required, supplied)
-        self.sMessage = sErrorMsg
-        self.sFormat = str(format)
-        self.iRequired = required
-        self.iSupplied = supplied
-
-    def format(self):
-        return self.sFormat
-
-    def required(self):
-        return self.iRequired
-
-    def supplied(self):
-        return self.iSupplied
-    
-
-class BadArgumentError(FormatError):
-    """\
-    Raised when a Format parser encounters an argument that doesn't conform
-    to the Format.
-
-    """
-    def __init__(self, format, argument, details):
-        sErrorMsg = "%s is not an acceptable argument for %s (%s)."
-        sErrorMsg %= (repr(argument), format, details)
-        self.sMessage = sErrorMsg
-        self.sFormat = str(format)
-        self.sArgument = argument
-        self.sDetails = details
-    
-    def format(self):
-        return self.sFormat
-
-    def argument(self):
-        return self.sArgument
-
-    def details(self):
-        return self.sDetails
+    def __init__(self, required, given, message=None):
+        self.required = required
+        self.given = given
+        if message is None:
+            message = "requires %d arguments and was given %d" % (required, given)
+        self.message = message
 
 def default_presenter(value):
     s = str(value)
@@ -97,761 +49,595 @@ def default_presenter(value):
     return s
 
 _UNSET = []
-class Format:
-    """\
-    A data format for an Option.
 
-    """
+class BaseFormat(object):
+    """Base for the format API."""
+    # These should not be none in subclasses.
     default = None
-    def __init__(self, shortname, parser, presenter = default_presenter, nargs = 1, docs = '',
-                 acceptemptystring = False, acceptedspecials = None,
-                 pargs = None, kwargs = None, addspecialsdocs = True, default = _UNSET):
-        """\
-        Instantiate a Format object. 
-        IN:
-        shortname <str>:
-            The shortest word that accurately describes the Format.
-        parser <callable>:
-            A function that parses a string value and returns a sanity
-            checked value in the correct type. The function should accept
-            one string argument and possibly also optional positional
-            and/or keyword arguments. The function should raise any kind
-            of Exception if the string argument is not parsable into the
-            correct format or fails sanity check.
-        presenter = str <callable>:
-            The inverse of parser. Should take a value as returned by
-            parser and return a string that can be used with parser to
-            recreate the value. Should accept one argument of the same
-            type as returned by parser and possibly also optional
-            positional and/or keyword arguments.
-        nargs = 1 <int>:
-            How many value parameters does this format require?
-        docs = '' <str>:
-            User friendly description of the format. '' means use a string
-            that tells how many arguments the format requires.
-        acceptemptystring = False <bool>:
-            Is the empty string an accepted argument? Note that in order for
-            an argument passed from within python to be interpreted as an
-            empty string you will have to pass something like "''" or '""'.
-        acceptedspecials = None <list str>, <str> or None:
-            Any strings with special mening that should be accepted even
-            though they do not represent a path to a readable file. A string
-            value will be interpreted as a list of one item. None means
-            use the empty list, e.g: there are no special exceptions. If
-            acceptemptystring is set then '' will be added to the list after
-            all other interpretations are done.
-        pargs = None <list x> or None:
-            Any extra positional arguments that should be fed to the
-            format on each parse/present.
-        kwargs = None <dict str x> or None:
-            Any extra keyword arguments that should be fed to the format
-            on each parse/present.
-        
-        NOTE:
-            The most common argument formats already have premade Format
-            subclasses, but if none of them are suitable - just
-            instantiate a Format object with your parser of taste, 
-            and possibly a presenter. For weirder option formats, like 
-            for example such that take a variable number of arguments,
-            all you need to do is subclass it and adapt the methods
-            accordingly.
+    name = None
 
-            Also, if an argument provided by the user is found among the
-            accepted specials it will be returned unparsed, so the
-            developer must check on this manually at a later stage.
-            
-        """
-        self.sShortName = shortname
-        self.cParser = parser
-        self.cPresenter = presenter
-        if nargs < 0:
-            raise ValueError("nargs must be >= 0.")
-        self.iNArgs = nargs
+    # nargs < 0 implies variable number of args, which is probably a bad idea
+    # in most circumstances.
+    nargs = 1
 
-        if acceptedspecials is None:
-            acceptedspecials = []
-        elif isinstance(acceptedspecials, str):
-            acceptedspecials = [acceptedspecials]
-        if acceptemptystring and '' not in acceptedspecials:
-            acceptedspecials.append('')
-        self.lsAcceptedSpecials = acceptedspecials
-
-        if docs:
-            self.sDocs = docs
-        elif nargs == 0:
-            self.sDocs = "Takes no argument."
+    def __init__(self,                  
+                 special=None,
+                 casesensitive=False,
+                 addspecialdocs=True):
+        if isinstance(special, basestring):
+            special = {special: special}
+        elif special is None:
+            special = dict()
         else:
-            if nargs == 1:
-                self.sDocs = "Takes 1 argument."
-            else:
-                self.sDocs = "Takes %s arguments." % nargs
-        if acceptedspecials and nargs > 0 and addspecialsdocs:
-            self.sDocs += " These special arguments are also accepted: %s." % acceptedspecials
-        if pargs is None:
-            pargs = []
-        self.lxPArgs = pargs
-        if kwargs is None:
-            kwargs = {}
-        self.dsxKWArgs = kwargs
-        
-        if default is not _UNSET:
-            self.default = default
-
-
-    def __str__(self):
-        return self.sShortName
-
-
-
-    def parse(self, args):
-        """\
-        Pops the first self.nargs() values from the args list, feeds them
-        to the parser and return the result. Subclass and override if
-        this is not the desired behavior. This function will change the
-        args list.
-        IN:
-        args <list str>:
-            The list of arguments available for parsing. Will be changed by
-            the method.
-        OUT:
-            Whatever is returned by the callback. "A list of ..." if
-            nargs > 1. Should never return None.
-
-        """
-        if len(args) < self.iNArgs:
-            raise BadNumberOfArgumentsError(self, self.iNArgs, len(args))
-
-        if self.iNArgs == 0:
-            return self.cParser(*self.lxPArgs, **self.dsxKWArgs)
-        elif self.iNArgs == 1:
-            sValue = args.pop(0)
-            if sValue in self.lsAcceptedSpecials:
-                return sValue
             try:
-                return self.cParser(sValue, *self.lxPArgs, **self.dsxKWArgs)
-            except Exception, e:
-                raise BadArgumentError(self, sValue, str(e))
-        else:
-            lxValues = []
-            for i in range(self.iNArgs):
-                sValue = args.pop(0)
-                if sValue in self.lsAcceptedSpecials:
-                    lxValues.append(sValue)
-                try:
-                    lxValues.append(self.cParser(sValue, *self.lxPArgs, **self.dsxKWArgs))
-                except Exception, e:
-                    raise BadArgumentError(self, sValue, str(e))
-            return lxValues
-        
+                special = dict(special)
+            except:
+                special = dict((s, s) for s in special)
+        self.special = special
+        self.casesensitive = casesensitive
+        if addspecialdocs and special:
+            self._docs = self.docs + ' These special values are accepted: ' + ', '.join(repr(s) for s in special) + '.' 
+    
+    _docs = None
+    docs = property(lambda self: self._docs or self.__class__.__doc__.splitlines()[0].strip())
 
+    def parse(self, argv):
+        """Pop, parse and return the first self.nargs items from args.
+
+        Subclasses that desire other behavior can override this (must be 
+        overridden if self.nargs is None). 
+
+        if self.nargs > 1 a list of parsed values will be returned.
+        
+        Raise BadNumberOfArguments or BadArgument on errors.
+         
+        NOTE: args may be modified in place by this method.
+        """
 
     def parsestr(self, argstr):
-        """\
-        Parse arguments found in settings files.
-        IN:
-        argstr <str>:
-            The string that should be parsed. '""' or "''" means pass an
-            empty string.
-        *pargs <list x> [optional]:
-            Any optional positional arguments will be piped to the parser.
-            callback.
-        **kwargs <dict x x> [optional]:
-            Any optional keyword arguments will be piped to the parser.
-        OUT:
-            Whatever is returned by the callback. "A list of ..." if
-            nargs > 1. Should never return None.
-        NOTE:
-            When parsing Boolean Flag option formats that do not accept
-            argument values on the command line, "1", "yes" or "true"
-            for True, or "0", "no" or "false" for False, case insensitive.
-
-        """
-        args = shlex.split(argstr, comments = True)
-
-        if len(args) == 0:
-            raise BadNumberOfArgumentsError(self, 1, 0)
+        """Parse arguments found in settings files.
         
-        if self.iNArgs == 0:
-            sValue = args.pop(0)
-            v = sValue.lower()
-            if v in ['1', 'yes', 'true', 'on']:
-                return True
-            elif v in ['0', 'no', 'false', 'off']:
-                return False
-            else:
-                raise BadArgumentError(self, sValue, "Allowed values include 'True' and 'False', among others")
-            
-        elif len(args) != self.iNArgs:
-            raise BadNumberOfArgumentsError(self, self.iNArgs, len(args))
+        argstr is the string that should be parsed. Use e.g. '""' to pass an
+        empty string.
+
+        if self.nargs > 1 a list of parsed values will be returned.
+
+        NOTE: formats with nargs == 0 or None probably want to override this 
+        method.
+        """
+        argv = shlex.split(argstr, comments=True)
+        if len(argv) != self.nargs:
+            raise BadNumberOfArguments(self.nargs, len(argv))
+        return self.parse(argv)
+
+    def present(self, value):
+        """Return a user-friendly representation of a value.
         
-        return self.parse(args)
-
-
-
-    def shortname(self):
-        """\
-        Return the short name of the Format.
-
+        Lookup value in self.specials, or call .to_literal() if absent.
         """
-        return self.sShortName
 
-
+def get_format(format):
+    """Get a format object.
     
-    def strvalue(self, value):
-        """\
-        Return a user friendly string formatted value.
-        IN:
-        value <x>:
-            What to string convert.
-        OUT:
-            A string that can be used with parsevalue to recreate the
-            value.
+    If format is a format object, return unchanged. If it is a string 
+    matching one of the BaseFormat subclasses in the tui.formats module
+    (case insensitive), return an instance of that class. Otherwise assume 
+    it'a factory function for Formats (such as a class) so call and return,
+    and raise ValueError on error.
+    """
+    if isinstance(format, BaseFormat):
+        return format
+    if isinstance(format, basestring):
+        for name, formatclass in globals().items():
+            if name.lower() == format.lower():
+                if not issubclass(formatclass, BaseFormat):
+                    raise ValueError('%s is not the name of a format class' % format)
+                return formatclass()
+    try:
+        return format()
+    except:
+        raise ValueError('no such format')
 
+class Metaformat(BaseFormat):
+    """A format that uses other formats to do most of the work."""
+
+class Format(BaseFormat):
+    """Base class for normal data format for tui.Parameters."""
+        
+    def __init__(self,
+                 args=None,
+                 kw=None,
+                 **kwargs):
         """
-        if self.iNArgs > 1:
-            sValue = " " .join(map(self.cPresenter, value))
-        else:
-            sValue = self.cPresenter(value, *self.lxPArgs, **self.dsxKWArgs)
-        return sValue
+        special is a argument:value dict of arguments with special meaning, 
+        where arguments (keys) must be strings and value can be any python 
+        object. Can also be given as an iterable for argument:value pairs, or 
+        as an iterable for arguments that should be passed through untouched, 
+        or as a single string which is taken as a list of one item.
+        
+        If case is False then all literals will be converted to lowercase for
+        lookup in self.specials.    
+        
+        If addspecialdocs is true then a notice of the accepted special 
+        arguments will be appended to self.docs.
+         
+        args and kw are additional positional and keyword parameters to be 
+        passed to self.to_python and self.to_literal.
+        """
+        super(Format, self).__init__(**kwargs)
+        if args is None:
+            args = tuple()
+        self.args = tuple(args)
+        if kw is None:
+            kw = dict()
+        self.kw = dict(kw)
 
-    def nargs(self):
-        return self.iNArgs
-
-    def docs(self):
-        return self.sDocs
-
+    def to_python(self, literal, *args, **kw):
+        """Convert a literal to a python object."""
+        return literal
     
+    def to_literal(self, value, *args, **kw):
+        """Convert a value to a user-friendly representation."""
+        return str(value)
+    
+    def parse_argument(self, arg):
+        """Parse a single argument.
+        
+        Lookup arg in self.specials, or call .to_python() if absent. Raise 
+        BadArgument on errors.
+        """
+        lookup = self.casesensitive and arg or arg.lower()
+        if lookup in self.special:
+            return self.special[lookup]
+        try:
+            return self.to_python(arg, *self.args, **self.kw)
+        except Exception, e:
+            raise BadArgument(arg, str(e))
+    
+    def parse(self, argv):
+        """Pop, parse and return the first self.nargs items from args.
+
+        if self.nargs > 1 a list of parsed values will be returned.
+        
+        Raise BadNumberOfArguments or BadArgument on errors.
+         
+        NOTE: argv may be modified in place by this method.
+        """
+        if len(argv) < self.nargs:
+            raise BadNumberOfArguments(self.nargs, len(argv))
+        if self.nargs == 1:
+            return self.parse_argument(argv.pop(0))
+        return [self.parse_argument(argv.pop(0)) for tmp in range(self.nargs)]
+
+    def present(self, value):
+        """Return a user-friendly representation of a value.
+        
+        Lookup value in self.specials, or call .to_literal() if absent.
+        """
+        for k, v in self.special.items():
+            if v == value:
+                return k
+        return self.to_literal(value, *self.args, **self.kw)
 
 class Flag(Format):
-    """\
-    An option that does not digest any additional arguments. Its mere
-    presence on the command line sets it. In settings files: use "1",
-    "yes" or "true" for True, or "0", "no" or "false" for False,
-    case insensitive.
+    """A boolean flag, True if present on the command line"""
     
-    """
     default = False
-    def __init__(self, commandline_value = True,
-                 acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a Flag Format object.
-        IN:
-        commandline_value <bool>:
-            What to return if the value is encountered on the command line.
+    nargs = 0
+    name = 'Flag'
+    true = ['1', 'yes', 'true', 'on']
+    false = ['0', 'no', 'false', 'off']
+    allowed = ', '.join(true + false[:-1]) + ' or ' + false[-1]
+    _docs = "Takes no argument on the command line. Use %s in configfiles (case insensitive)." % allowed
 
+    def parse(self, argv):
+        return True
+        
+    def parsestr(self, argstr):
+        """Parse arguments found in settings files.
+        
+        Use the values in self.true for True in settings files, or those in 
+        self.false for False, case insensitive.
         """
-        Format.__init__(self, 'Flag', lambda: commandline_value, nargs = 0,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-        
-
-
-class Int(Format):
-    """\
-    A format that accept one integer value.
-
-    """
-    default = 0
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate an Int Format object.
-
-        """
-        Format.__init__(self, 'Int', self._parser,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-    def _parser(self, argument):
-        try:
-            return int(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to integer")
-
-
-
-class PositiveInt(Format):
-    """\
-    A format that accepts one positive integer value.
-
-    """
-    default = 0
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a PositiveInt Format object.
-    
-        """
-        Format.__init__(self, 'PositiveInt', self._parser, docs = "Must be > 0.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-        
-
-    def _parser(self, argument):
-        try:
-            i = int(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to integer")
-        if i < 1:
-            raise ValueError("it is < 1")
-        return i
-
-
-
-class NonnegativeInt(Format):
-    """\
-    A format that accepts one positive integer value.
-
-    """
-    default = 1
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a PositiveInt Format object.
-    
-        """
-        Format.__init__(self, 'NonnegativeInt', self._parser, docs = "Must not be < 0.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-        
-
-    def _parser(self, argument):
-        try:
-            i = int(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to integer")
-        if i < 0:
-            raise ValueError("it is < 0")
-        return i
-
-
-
-class BoundedInt(Format):
-    """\
-    A format that accepts one integer value in a given interval
-
-    """
-    default = 0
-    def __init__(self, lowerbound = None, upperbound = None,
-                 acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a PositiveInt Format object.
-        IN:
-        lowerbound = None <int> or None:
-            The lowest allowed value. None means unbound downwards.
-        upperbound = None <int> or None:
-            The highest allowed value. None means unbound upwards.
-        NOTE:
-            Both bounds cannot be None simultaneously.
-    
-        """
-        if lowerbound is None:
-            if upperbound is None:
-                raise DeveloperError("Both upper and lower bounds cannot be None simultaneously.")
-            sShortName = "Int<=%s" % upperbound
-        else:
-            if upperbound is None:
-                sShortName = "Int>=%s" % lowerbound
-            else:
-                if upperbound < lowerbound:
-                    raise DeveloperError("Upper bound must not be lower than lower bound.")
-                sShortName = "Int%s-%s" % (lowerbound, upperbound)
-        self.iLowerBound = lowerbound
-        self.iUpperBound = upperbound
-        Format.__init__(self, sShortName, self._parser, docs = "Must be in the given range.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-        
-
-    def _parser(self, argument):
-        try:
-            i = int(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to integer")
-        if not (self.iLowerBound is None) and i < self.iLowerBound:
-            raise ValueError("it is < %s" % self.iLowerBound)
-        if not (self.iUpperBound is None) and i > self.iUpperBound:
-            raise ValueError("it is > %s" % self.iUpperBound)
-        return i
-
-
-
-class Float(Format):
-    """\
-    A format that accepts one Float value.
-
-    """
-    default = 0.0
-    def __init__(self, formatter = None, acceptemptystring = False,
-                 acceptedspecials = None):
-        """\
-        Instantiate a Float Format object.
-        IN:
-        formatter = None <str> or None:
-            A positional python string formatter for a float value. Used
-            with the presenter. None means use str() to format.
-
-        """
-        kwargs = {'formatter': formatter}
-        Format.__init__(self, 'Float', self._parser, presenter = self._presenter,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring, kwargs = kwargs)
-
-    def _parser(self, argument, **kwargs):
-        try:
-            return float(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to float")
-
-    def _presenter(self, value, formatter = '%.2f'):
-        if formatter is None:
-            return str(value)
-        else:
-            return formatter % value
-
-
-        
-class BoundedFloat(Format):
-    """\
-    A format that accepts one integer value in a given interval
-
-    """
-    default = 0.0
-    def __init__(self, lowerbound = None, upperbound = None, formatter = None,
-                 acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a PositiveInt Format object.
-        IN:
-        lowerbound = None <float> or None:
-            The lowest allowed value. None means unbound downwards.
-        upperbound = None <float> or None:
-            The highest allowed value. None means unbound upwards.
-        formatter = None <str> or None:
-            A positional python string formatter for a float value. Used
-            with the presenter. None means use str() to format.
-        
-        NOTE:
-            Both bounds cannot be None simultaneously.
-    
-        """
-        if lowerbound is None:
-            if upperbound is None:
-                raise DeveloperError("Both upper and lower bounds cannot be None simultaneously.")
-            sShortName = "Float<=%s" % upperbound
-        else:
-            if upperbound is None:
-                sShortName = "Float>=%s" % lowerbound
-            else:
-                if upperbound < lowerbound:
-                    raise DeveloperError("Upper bound must not be lower than lower bound.")
-                sShortName = "Float%s-%s" % (lowerbound, upperbound)
-        self.nLowerBound = lowerbound
-        self.nUpperBound = upperbound
-        kwargs = {'formatter': formatter}
-        Format.__init__(self, sShortName, self._parser, self._presenter,
-                        docs = "Must be in the given range.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring, kwargs = kwargs)
-
-        
-
-    def _parser(self, argument, **kwargs):
-        try:
-            n = float(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to float")
-        if not (self.nLowerBound is None) and n < self.nLowerBound:
-            raise ValueError("it is < %s" % self.nLowerBound)
-        if not (self.nUpperBound is None) and n > self.nUpperBound:
-            raise ValueError("it is > %s" % self.nUpperBound)
-        return n
-
-
-    def _presenter(self, value, formatter = None):
-        if formatter is None:
-            return str(value)
-        else:
-            return formatter % value
-
-
-
-class NonnegativeFloat(Format):
-    """\
-    A format that accepts one integer value in a given interval
-
-    """
-    default = 0.0
-    def __init__(self, formatter = None, acceptemptystring = False,
-                 acceptedspecials = None):
-        """\
-        Instantiate a NonnegativeFloat Format object.
-        IN:
-        formatter = None <str> or None:
-            A positional python string formatter for a float value. Used
-            with the presenter. None means use str() to format.
-        
-        """
-        sShortName = "Float<=0"
-        kwargs = {'formatter': formatter}
-        Format.__init__(self, sShortName, self._parser, self._presenter,
-                        docs = "Must be >= 0.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring, kwargs = kwargs)
-
-        
-
-    def _parser(self, argument, **kwargs):
-        try:
-            n = float(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to float")
-        if n < 0:
-            raise ValueError("it is < 0")
-        return n
-
-
-    def _presenter(self, value, formatter = None):
-        if formatter is None:
-            return str(value)
-        else:
-            return formatter % value
-
-
-
-class FloatPercentage(Format):
-    """\
-    A format that accepts one Float value between 0.0 and 100.0.
-
-    """
-    default = 0.0
-    def __init__(self, acceptemptystring = False, acceptedspecials = None,
-                 formatter = None):
-        """\
-        Instantiate a Float Format object.
-        formatter = None <str> or None:
-            A positional python string formatter for a float value. Used
-            with the presenter. None means use str() to format.
-
-        """
-        kwargs = {'formatter': formatter}
-        Format.__init__(self, 'Percentage', self._parser, self._presenter,
-                        docs = "Value must be between 0.0 and 100.0.",
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring, kwargs = kwargs)
-
-
-
-    def _parser(self, argument, **kwargs):
-        try:
-            n = float(argument)
-        except ValueError:
-            raise ValueError("cannot transform it to float")
-        if n > 100.0:
-            raise ValueError("it is > 100.0")
-        if n < 0.0:
-            raise ValueError("it is < 0.0")
-        return n
-        
-
-    def _presenter(self, value, formatter = None):
-        if formatter is None:
-            return str(value)
-        else:
-            return formatter % value
-
-
+        argv = shlex.split(argstr, comments=True)
+        if len(argv) != 1:
+            raise BadNumberOfArguments(1, len(argv))
+        arg = argv[1]
+        lower = arg.lower()
+        if lower in self.true:
+            return True
+        if lower in self.false:
+            return False
+        raise BadArgument(arg, "Allowed values are " + self.allowed + '.')
         
 class String(Format):
-    """\
-    A format that accepts one String value.
-
-    """
+    "A string of characters."
     default = ''
-    def __init__(self):
-        """\
-        Instantiate a Float Format object.
-
+    name = 'String'
+    
+class Int(Format):
+    """An integer number."""
+    default = 0
+    _shortname = 'Int'
+    
+    def __init__(self,
+                 lower=None,
+                 upper=None,
+                 inclusive=None,
+                 lowerinclusive=True,
+                 upperinclusive=True,
+                 **kw):
         """
-        Format.__init__(self, 'String', str)
+        lower and upper (if not None) give the lower and upper bounds of 
+        permissible values. 
+        
+        lowerinclusive and upperinclusive state whether the bound values 
+        themselves are within the permissible range.
+        
+        inclusive (if not None) overrides lowerinclusive and upperinclusive.
+        """
+        super(Int, self).__init__(**kw)
+        if inclusive is not None:
+            lowerinclusive = upperinclusive = inclusive
+        self.lower = lower
+        self.upper = upper
+        self.lowerinclusive = lowerinclusive
+        self.upperinclusive = upperinclusive
+        docs = [self.docs[:-1]]
+        if lower is not None:
+            if lowerinclusive:
+                docs.append('no less than ' + self.to_literal(lower))
+            else:
+                docs.append('greater than ' + self.to_literal(lower))
+            if upper is not None:
+                docs.append('but')
+        if upper is not None:
+            if upperinclusive:
+                docs.append('no greater than ' + self.to_literal(upper))
+            else:
+                docs.append('less than ' + self.to_literal(upper))
+        self._docs = ' '.join(docs) + '.'
+                
+    
+    @property
+    def name(self):
+        if self.lower is not None:
+            if self.upper is not None:
+                return (self._shortname + 
+                        (self.lowerinclusive and '[' or '<') +
+                        self.to_literal(self.lower, *self.args, **self.kw) +
+                        ',' +
+                        self.to_literal(self.upper, *self.args, **self.kw) +
+                        (self.upperinclusive and ']' or '>'))
+            return (self._shortname +
+                    '>' +
+                    (self.lowerinclusive and '=' or '') +
+                    self.to_literal(self.lower, *self.args, **self.kw))
+        if self.upper is not None:
+            return (self._shortname +
+                    '<' +
+                    (self.upperinclusive and '=' or '') +
+                    self.to_literal(self.upper, *self.args, **self.kw))
+        return self._shortname
 
+    def _to_python(self, literal):
+        return int(literal)
 
+    def to_python(self, literal):
+        value = self._to_python(literal)
+        if self.lower is not None:
+            if self.lowerinclusive:
+                if value < self.lower:
+                    raise ValueError('must not be less than ' + self.to_literal(self.lower))
+            elif value <= self.lower:
+                raise ValueError('must be greater than ' + self.to_literal(self.lower))
+        if self.upper is not None:
+            if self.upperinclusive:
+                if value > self.upper:
+                    raise ValueError('must not be greater than ' + self.to_literal(self.upper))
+            elif value >= self.upper:
+                raise ValueError('must be less than ' + self.to_literal(self.upper))
+        return value
+    
+class Float(Int):
+    """A decimal number."""
+    default = 0.0
+    _shortname = 'Float'
+    formatter = None
+    
+    def __init__(self,
+                 lower=None,
+                 upper=None,
+                 inclusive=None,
+                 lowerinclusive=True,
+                 upperinclusive=True,
+                 formatter=None,
+                 **kw):
+        """
+        formatter should be a python string interpolation format stating how 
+        to display the value. None means use plain str.
+        """
+        super(Float, self).__init__(lower, upper, inclusive, lowerinclusive, upperinclusive, **kw)
+        if formatter:
+            self.kw['formatter'] = formatter
 
+    def to_literal(self, value, formatter=None, *args, **kw):
+        if formatter is None:
+            return str(value)
+        return formatter % value
+
+    def _to_python(self, literal):
+        return float(literal)
+    
+class Percentage(Float):
+    """A decimal number in percent units."""
+    _shortname = 'Percentage'
+    
 class ReadableFile(Format):
-    """\
-    A format that accepts one readable file.
-
+    """A readable file.
+    
+    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
+    os.path.expanduser().
     """
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a ReadableFile Format object. 
-
-        """
-        sDocs = "A (path to a) readable file."
-        Format.__init__(self, 'ReadableFile', self._parser, docs = sDocs,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-
-    def _parser(self, argument):
-        if argument in self.lsAcceptedSpecials:
-            return argument
+    name = 'ReadableFile'
+    mode = 'r'
+    
+    def to_python(self, literal):
+        literal = os.path.expanduser(literal)
         try:
-            f = open(argument)
-            f.close()
+            open(literal, self.mode)
         except IOError, e:
             raise ValueError(e.strerror)
-        return argument
-        
+        return literal
 
-        
-class WritableFile(Format):
-    """\
-    A format that accepts one writable file. Nonexisting files will be
-    created if possible.
+class WritableFile(ReadableFile):
+    """A writable file, will be created if possible.
 
+    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
+    os.path.expanduser().
     """
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a WritableFile Format object.
-
-        """
-        sDocs = "A (path to a) writable file. Nonexisting files will be created if possible. Otherwise the program will halt."
-        Format.__init__(self, 'WritableFile', self._parser, docs = sDocs,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-
-    def _parser(self, argument):
-        if argument in self.lsAcceptedSpecials:
-            return argument
-        try:
-            f = open(argument, 'a')
-            f.close()
-        except IOError, e:
-            raise ValueError(e.strerror)
-        return argument
-        
-
-        
+    name = 'WritableFile'
+    mode = 'a'
+    
 class ReadableDir(Format):
-    """\
-    A format that accepts one readable directory.
-
+    """A readable directory.
+    
+    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
+    os.path.expanduser().
     """
     default = '.'
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a ReadableDir Format object.
-
-        """
-        sDocs = "A (path to a) readable directory."
-        Format.__init__(self, 'ReadableDir', self._parser, docs = sDocs,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-
-    def _parser(self, argument):
-        if argument in self.lsAcceptedSpecials:
-            return argument
-        if not os.access(argument, os.R_OK):
+    
+    def to_python(self, literal):
+        literal = os.path.expanduser(literal)
+        if not os.access(literal, os.R_OK):
             raise ValueError('it does not exist')
-        elif not os.path.isdir(argument):
+        elif not os.path.isdir(literal):
             raise ValueError('it is not a directory')
-        elif not os.access(argument, os.R_OK):
+        elif not os.access(literal, os.R_OK):
             raise ValueError('it is not readable')
-        return argument
+        return literal
         
+class WritableDir(ReadableDir):
+    """A writable directory, will be created if possible.
 
-        
-class WritableDir(Format):
-    """\
-    A format that accepts one writable file. Nonexisting files will be
-    created if possible.
-
-    """
-    default = '.'
-    def __init__(self, acceptemptystring = False, acceptedspecials = None):
-        """\
-        Instantiate a Float Format object. 
-
-        """
-        sDocs = "A (path to a) writable directory. Nonexisting directories will be created if possible. Otherwise the program will halt."
-        Format.__init__(self, 'WritableDir', self._parser, docs = sDocs,
-                        acceptedspecials = acceptedspecials,
-                        acceptemptystring = acceptemptystring)
-
-
-    def _parser(self, argument):
-        if argument in self.lsAcceptedSpecials:
-            return argument
-        if not os.path.isdir(argument):
+    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
+    os.path.expanduser().
+    """    
+    def to_python(self, literal):
+        literal = os.path.expanduser(literal)
+        if not os.path.isdir(literal):
             try:
-                os.mkdir(argument)
+                os.mkdir(literal)
             except Exception:
                 raise ValueError('it does not exist and cannot be created')
-        elif not os.access(argument, os.W_OK):
+        elif not os.access(literal, os.W_OK):
             raise ValueError('it is not writable')
-        return argument
-        
-
+        return literal
         
 class Choice(Format):
-    """\
-    A format that accepts one string out of a given set of strings.
-
-    """
-    def __init__(self, choices = None, acceptemptystring = False,
-                 acceptedspecials = None, casesensitive = False):
-        """\
-        Instantiate a Choice Format object.
-        IN:
-        choices = None <list str>:
-            The list of legal choices for this option. None is not accepted.
-
-        """
-        if len(choices) < 2:
-            raise DeveloperError("Must have at least two choices")
-        sCS = 'case sensitive'
-        if not casesensitive:
-            choices = map(lambda x: x.upper(), choices)
-            sCS = 'case insensitive'
-        kwargs = {'choices': choices, 'casesensitive': casesensitive}
-        sChoices = ', '.join(map(repr, choices[:-1]))
-        sChoices += ' and ' + repr(choices[-1])
-        sDocs = "Accepted values are %s, %s." % (sChoices, sCS)
-        Format.__init__(self, 'Choice', self._parser, presenter = self._presenter,
-                        acceptedspecials = acceptedspecials, docs = sDocs,
-                        acceptemptystring = acceptemptystring, kwargs = kwargs)
-
-    def _parser(self, argument, choices = None, casesensitive = False):
-        if not casesensitive:
-            argument = argument.upper()
-        if not argument in choices:
-            raise ValueError("it's not among the legal choices")
-        return argument
-
-    def _presenter(self, value, **kwargs):
-        return str(value)
-
+    """Choose among the allowed values."""
+    name = 'Choice'
+    
+    def __init__(self,
+                 choices,
+                 **kw):
+        if not choices:
+            raise ValueError('need at least one choice')
+        super(Choice, self).__init__(special=choices, **kw)
+        self._docs = "%s: %s." % (self.__class__.__docs__.splitlines()[0][:-1], self.allowed) 
+    
+    allowed = property(lambda self: ', '.join(repr(s) for s in self.special))
+    
+    def to_python(self, literal, *args, **kw):
+        raise ValueError("it is not among the legal choices: " + self.allowed + '.')
 
 class RegEx(Format):
-    """A format that accepts a regular expression."""
+    """A perl like regular expression."""
     default = ''
-    def __init__(self, acceptemptystring=None, acceptedspecials=None, flags=0):
+    name = 'RegEx'
+    
+    def __init__(self, flags=0, **kw):
         """flags should be an integer and is passed to re.compile. It can 
         also be a string of one or more of the letters 'iLmsux' (the short 
         names of the re flags).
         """
-        if isinstance(flags, str):
+        if isinstance(flags, basestring):
             flags = flags.upper()
-            if flags.strip('ILMSUX'):
-                raise DeveloperError('illegal flags')
+            if flags.translate(None, 'ILMSUX'):
+                raise ValueError('illegal flags ' + flags.translate(None, 'ILMSUX'))
             flags = reduce(lambda i, flag: i | getattr(re, flag), flags, 0)
-        docs = "A python re (a regular experssion)."
-        Format.__init__(self, 
-                        shortname='RegEx', 
-                        parser=re.compile, 
-                        presenter=lambda r: repr(r.pattern) if r else '', 
-                        docs=docs,
-                        acceptemptystring=acceptemptystring, 
-                        acceptedspecials=acceptedspecials)
+        super(RegEx, self).__init__(**kw)
+        self.kw['flags'] = flags
+
+    def to_python(self, literal, flags=0, *args, **kw):
+        return re.compile(literal, flags)
+        
+    def to_literal(self, value, flags=0, *args, **kw):
+        return value and value.pattern or ''
+
+class List(Metaformat):
+    """A simple list metaformat."""
+    separator = ','
+    separator_name = 'comma'
+    
+    def __init__(self,
+                 format,
+                 separator=None,
+                 separator_name=None,
+                 strip=True,
+                 **kw):
+        super(List, self).__init__(format, **kw)
+        self.format = get_format(format)
+        if self.format.nargs == 0:
+            raise ValueError('format.nargs cannot be 0')
+        self.separator = separator or self.__class__.separator
+        self.separator_name = separator_name or self.__class__.separator_name
+        self.strip = strip
+        
+    @property
+    def name(self):
+        return "ListOf" + self.format.name
+    
+    @property
+    def docs(self):
+        out = ['A %s separated list of %s.' % (self.separator_name, self.format.name)]
+        if self.special:
+            out.append('These special values are accepted:')
+            out.append(', '.join(repr(s) for s in self.special) + '.')
+        out.append('%s: %s' % (self.format.name, self.format.docs))
+        return ' '.join(out)
+    
+    def parse(self, argv):
+        """Pop, parse and return the first arg from argv.
+        
+        The arg will be .split() based on self.separator and the (optionally 
+        stripped) items will be parsed by self.format and returned as a list. 
+
+        Raise BadNumberOfArguments or BadArgument on errors.
+         
+        NOTE: args will be modified.
+        """
+        if not argv:
+            raise BadNumberOfArguments(1, 0)
+        argument = argv.pop(0)
+        lookup = self.casesensitive and argument or argument.lower()
+        if lookup in self.special:
+            return self.special[lookup]
+        argv = [(self.strip and s.strip() or s) for s in argument.split(self.separator)]
+        values = []
+        while argv:
+            values.append(self.format.parse(argv))
+        return values
+    
+    def present(self, value):
+        """Return a user-friendly representation of a value.
+        
+        Lookup value in self.specials, or call .to_literal() if absent.
+        """
+        for k, v in self.special.items():
+            if v == value:
+                return k
+        return self.separator.join(self.format.present(v) for v in value)
+
+class Tuple(Metaformat):
+    """A simple tuple metaformat."""
+    separator = ':'
+
+    def __init__(self,
+                 format,
+                 separator=None,
+                 strip=True,
+                 **kw):
+        """
+        self.separator should be a string of separator characters. If there are
+        more formats than separators, the last given separator will be used 
+        repeatedly for all the rest. 
+        
+        If strip is true, each part of the split argument will be stripped 
+        before passed to its format for parsing.
+        
+        See Metaformat and Baseformat for other parameters.  
+        """
+        self.format = []
+        for f in format:
+            self.format.append(get_format(f))
+            if f.nargs == 0:
+                raise ValueError('format.nargs cannot be 0')
+        super(Tuple, self).__init__(**kw)
+        self.separator = separator or self.__class__.separator
+        if len(self.separator) >= len(format):
+            raise ValueError('needs more formats than separator characters') 
+        self.strip = strip
+
+    def get_separator(self, i):
+        """Return the separator that preceding format i, or '' for i == 0."""
+        return i and self.separator[min(i - 1, len(self.separator) - 1)] or ''
+
+    @property
+    def name(self):
+        return 'Tuple(%s)' % ''.join(self.get_separator(i) + format.name for i, format in enumerate(self.format))
+    
+    @property
+    def docs(self):
+        sep = 'by '
+        if len(self.separator) > 1:
+            sep = ', '.join(repr(c) for c in self.separator[:-1])
+            if len(self.format) - 1 > len(self.separator):
+                sep = 'first by ' + sep + ' and the rest by '
+            else:
+                sep += 'by ' + sep + ' and '
+        sep += repr(self.separator[-1])
+        out = ['A tuple of values separated %s.' % sep]
+        if self.special:
+            out.append('These special values are accepted:')
+            out.append(', '.join(repr(s) for s in self.special) + '.')
+        shown = []
+        for format in self.format:
+            docs = '%s is %s' % (format.name, format.docs[0].lower() + format.docs[1:])
+            if docs not in shown:
+                out.append(docs)
+                shown.append(docs)
+        return ' '.join(out)
+    
+    def parse(self, argv):
+        """Pop, parse and return the first arg from argv.
+        
+        The arg will be repeatedly .split(x, 1) based on self.get_separator() and the 
+        (optionally stripped) items will be parsed by self.format and returned
+        as a list. 
+
+        Raise BadNumberOfArguments or BadArgument on errors.
+         
+        NOTE: args will be modified.
+        """
+        if not argv:
+            raise BadNumberOfArguments(1, 0)
+        remainder = argv.pop(0)
+        lookup = self.casesensitive and remainder or remainder.lower()
+        if lookup in self.special:
+            return self.special[lookup]
+        values = []
+        for i, format in enumerate(self.format[:-1]):
+            print i, self.get_separator(i)
+            try:
+                arg, remainder = remainder.split(self.get_separator(i + 1), 1)
+            except:
+                raise BadArgument(remainder, 'does not contain required separator ' + repr(self.get_separator(i + 1)))
+            if self.strip:
+                arg = arg.strip()
+            values.append(format.parse([arg]))
+        if self.strip:
+            remainder = remainder.strip()
+        values.append(format.parse([remainder]))
+        return values
+    
+    def present(self, value):
+        """Return a user-friendly representation of a value.
+        
+        Lookup value in self.specials, or call .to_literal() if absent.
+        """
+        for k, v in self.special.items():
+            if v == value:
+                return k
+        return ''.join(self.get_separator(i) + self.format[i].present(v) for i, v in enumerate(value))
+    
