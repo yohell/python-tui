@@ -374,16 +374,11 @@ class Percentage(Float):
     _shortname = 'Percentage'
     
 class ReadableFile(Format):
-    """A readable file.
-    
-    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
-    os.path.expanduser().
-    """
+    """A readable file."""
     name = 'ReadableFile'
     mode = 'r'
     
     def to_python(self, literal):
-        literal = os.path.expanduser(literal)
         try:
             open(literal, self.mode)
         except IOError, e:
@@ -400,15 +395,10 @@ class WritableFile(ReadableFile):
     mode = 'a'
     
 class ReadableDir(Format):
-    """A readable directory.
-    
-    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
-    os.path.expanduser().
-    """
+    """A readable directory."""
     default = '.'
     
     def to_python(self, literal):
-        literal = os.path.expanduser(literal)
         if not os.access(literal, os.R_OK):
             raise ValueError('it does not exist')
         elif not os.path.isdir(literal):
@@ -418,13 +408,8 @@ class ReadableDir(Format):
         return literal
         
 class WritableDir(ReadableDir):
-    """A writable directory, will be created if possible.
-
-    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
-    os.path.expanduser().
-    """    
+    """A writable directory, will be created if possible."""    
     def to_python(self, literal):
-        literal = os.path.expanduser(literal)
         if not os.path.isdir(literal):
             try:
                 os.mkdir(literal)
@@ -444,7 +429,7 @@ class Choice(Format):
         if not choices:
             raise ValueError('need at least one choice')
         super(Choice, self).__init__(special=choices, **kw)
-        self._docs = "%s: %s." % (self.__class__.__docs__.splitlines()[0][:-1], self.allowed) 
+        self._docs = "%s: %s." % (self.__class__.__doc__.splitlines()[0][:-1], self.allowed) 
     
     allowed = property(lambda self: ', '.join(repr(s) for s in self.special))
     
@@ -486,7 +471,7 @@ class List(Metaformat):
                  separator_name=None,
                  strip=True,
                  **kw):
-        super(List, self).__init__(format, **kw)
+        super(List, self).__init__(**kw)
         self.format = get_format(format)
         if self.format.nargs == 0:
             raise ValueError('format.nargs cannot be 0')

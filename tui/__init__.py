@@ -47,7 +47,6 @@ def main(argv=sys.argv):
     if ui['verbosity'] == 9000:
         ui.graceful_exit(BadArgument(ui, 'verbosity', 'way too chatty'))
     if ui['verbosity'] == 8000:
-        # Tweak stuff if needed
         ui['verbosity'] = 16000
     if ui['in-file'] and open(ui['in-file']).read() == 'bad content':
         ui.graceful_exit('custom error message')
@@ -319,9 +318,9 @@ class ParseError(Exception):
 class BadArgument(ParseError):
     """Raised when options get literals incompatible with their Format."""
     
-    template = "%s is not an acceptable argument for %s (%s)."
+    template = "%r is not an acceptable argument for %s (%s)."
 
-    def __init__(self, value, name, details, message=None):
+    def __init__(self, value=None, name=None, details=None, message=None):
         super(BadArgument, self).__init__(value, name, details, message=message)
 
 class BadNumberOfArguments(ParseError):
@@ -329,7 +328,7 @@ class BadNumberOfArguments(ParseError):
 
     template = "%s requires %s arguments and was given %s."
     
-    def __init__(self, n_required, name, n_given, message=None):
+    def __init__(self, name=None, n_required=None, n_given=None, message=None):
         super(BadNumberOfArguments, self).__init__(name, n_required, n_given, message=message)
 
 class InvalidOption(ParseError):
@@ -337,7 +336,7 @@ class InvalidOption(ParseError):
     
     template = "The option %s does not exist."
 
-    def __init__(self, name, message=None):
+    def __init__(self, name=None, message=None):
         super(InvalidOption, self).__init__(name, message=message)
         
 class OptionRecurrenceError(ParseError):
@@ -345,7 +344,7 @@ class OptionRecurrenceError(ParseError):
 
     template = "The option %s can only be used once in an argument list."
 
-    def __init__(self, name, message=None):
+    def __init__(self, name=None, message=None):
         super(OptionRecurrenceError, self).__init__(name, message=message)
 
 class ReservedOptionError(ParseError):
@@ -353,7 +352,7 @@ class ReservedOptionError(ParseError):
 
     template = "The option %s is reserved for command line use."
 
-    def __init__(self, name, message=None):
+    def __init__(self, name=None, message=None):
         super(ReservedOptionError, self).__init__(name, message=message)
         
 class BadAbbreviationBlock(ParseError):
@@ -364,7 +363,7 @@ class BadAbbreviationBlock(ParseError):
     """
     template = "Option %s in the abbreviation block %s is illegal (%s)."
 
-    def __init__(self, abbreviation, block, details, message=None):
+    def __init__(self, abbreviation=None, block=None, details=None, message=None):
         super(BadAbbreviationBlock, self).__init__(abbreviation, block, details, message=message)
 
 ## Internal helpers
@@ -657,7 +656,7 @@ class Option(Parameter):
         try:
             value = self.format.parse(argv)
         except formats.BadNumberOfArguments, e:
-            raise BadNumberOfArguments(e.required, usedname, e.supplied)
+            raise BadNumberOfArguments(usedname, e.required, e.supplied)
         except formats.BadArgument, e:
             raise BadArgument(e.argument, usedname, e.message)
         if self.recurring:
@@ -681,7 +680,7 @@ class Option(Parameter):
         try:
             value = self.format.parsestr(argsstr)
         except formats.BadNumberOfArguments, e:
-            raise BadNumberOfArguments(e.required, usedname, e.supplied)
+            raise BadNumberOfArguments(usedname, e.required, e.supplied)
         except formats.BadArgument, e:
             raise BadArgument(e.argument, usedname, e.message)
         if self.recurring:
@@ -755,7 +754,6 @@ class PositionalArgument(Parameter):
             return
         try:
             value = self.format.parse(argv)
-            print self.name, argv, value 
             if not self.recurring:
                 self.value = value
                 return
@@ -763,9 +761,9 @@ class PositionalArgument(Parameter):
             while argv:
                 self.value.append(self.format.parse(argv))
         except formats.BadNumberOfArguments, e:
-            raise BadNumberOfArguments(e.required, self.displayname, e.given) XXX
+            raise BadNumberOfArguments(self.displayname, e.required, e.given)
         except formats.BadArgument, e:
-            raise BadArgument(e.argument, self.displayname, e.details)
+            raise BadArgument(e.argument, self.displayname, e.message)
 
 class tui(TUIBase):
     """Textual user interface."""
@@ -1680,7 +1678,7 @@ class tui(TUIBase):
         argv = None <list str> or None:
             Use this argument list. Will be modified. None means use copy of 
             sys.argv. argv[0] is ignored.
-        showusageonnoargs = True <bool>:
+        showusageonnoargs = False <bool>:
             Show usage and exit if the user didn't give any args. Should be
             set to False if there are no required PositionalArgs in the UI.
         width = 0 <int>:
@@ -1693,6 +1691,8 @@ class tui(TUIBase):
             of readability.
 
         """
+        if argv is None:
+            argv = list(sys.argv)
         self.readdocs(self.docsfiles)
         if showusageonnoargs and len(argv) == 1:
             print self.shorthelp(width=width)
