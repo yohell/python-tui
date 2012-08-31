@@ -19,7 +19,6 @@ A one line description of my program goes here.
 You can put any amount of text in the rest of this docstring, and it will be 
 ignored by get_metainfo(), however certain keywords are detected:
 
-Version:   If you like, but it's better to put it in __version__ below.  
 Website:   http://www.example.com
 Download:  http://www.example.com/download
 Author:    Joel Hedlund <yohell@ifm.liu.se>
@@ -32,25 +31,27 @@ __version__ = "0.1.0"
 import sys
 import mypackage
 def main(argv=sys.argv):
-    from tui import (BadArgument, formats, get_metainfo, tui)
-    ui = tui(version=__version__,
-             install_dir=mypackage,
+    from tui import (BadArgument, formats, get_metainfo, tui, Option, Posarg)
+    ui = tui([Option('quiet', 'Flag', 'q'),
+              Option('noise', 'Int', 'v', default=10),
+              Option('job-tag', 'String', recurring=True),
+              Posarg('in-file', formats.ReadableFile(special={'-':sys.stdin})),
+              Posarg('out-file', formats.WritableFile, optional=True)],
+             version=__version__,
+             install_dir=__file__,
              ignore=['squeegees'],
              **get_metainfo(__file__))
-    ui.makeoption('quiet', 'Flag', 'q') 
-    ui.makeoption('verbosity', 'Int', 'v', default=10)
-    ui.makeoption('job-tag', 'String', recurring=True)
-    ui.makeposarg('in-file', formats.ReadableFile(special={'-':sys.stdin}))
-    ui.makeposarg('out-file', formats.WritableFile, optional=True)
-    ui.launch()
-    # Any additional custom parameter checking/tweaking:
-    if ui['verbosity'] == 9000:
-        ui.graceful_exit(BadArgument(ui, 'verbosity', 'way too chatty'))
-    if ui['verbosity'] == 8000:
-        ui['verbosity'] = 16000
+    # Any additional custom parameter checking:
+    if ui['noise'] == 9000:
+        ui.graceful_exit(BadArgument('noise', ui['noise'], 'way too chatty'))
     if ui['in-file'] and open(ui['in-file']).read() == 'bad content':
         ui.graceful_exit('custom error message')
+    # Tweak stuff if needed:
+    if ui['noise'] == 8000:
+        ui['verbosity'] = 16000
+    # Go time!
     return mypackage.do_stuff(**ui.dict())
+    
 if __name__ == '__main__':
     sys.exit(main() or 0)
 ------------------------------------------------------------------------------
@@ -60,7 +61,7 @@ We're pretty much done here, but if you feel like it, put this in myprog.docs:
 PARAMETER: quiet
 Suppress all normal output through speakers.
 
-PARAMETER: verbosity
+PARAMETER: noise
 Level of chatter, less is more.
 
 PARAMETER: in-file
@@ -114,12 +115,13 @@ $ myprog -h (or --help) # Print help message.
 $ myprog -H (or --HELP) # Print more verbose help message.
 $ myprog -V (or --version) # Print version.
 $ myprog -S (or --settings) # Print settings and origin: builtin/file/cmdline.
-$ myprog --job-tag a --job-tag b -q -v 14 # Up to you!
+$ myprog --job-tag a --job-tag b -q -v 14 - # Up to you!
 
-In the latter case .launch() gives you:
+In the latter case you get:
 ui['quiet'] == True
 ui['job-tag'] == ['liu.se/index.html', 'a', 'b'] # A list since it's recurring.
-ui['in-file'] == None # since it's optional and the user gave no arg for it. 
+ui['in-file'] == sys.stdin # the special value - was used. 
+ui['out-file'] == None # since it's optional and the user gave no arg for it. 
 
 
 DETAILS:
@@ -127,20 +129,21 @@ As much as possible of the tui documentation has been pushed to __doc__ strings
 for individual modules, functions, classes and methods, but here are some nice
 entry points:
 
+To get started you probably want to import tui, Option and Posarg from the tui
+package, and possibly some formats from the tui.formats module.
+
 The tui class is the main workhorse that holds all program info, knows how to
 parse docs, config and command line parameters, and how to present all this
-info to the user. Instantiate with metainfo (see get_metainfo() docstring syntax just 
-below), add options and positional arguments with .makeoption() and 
-.makeposarg(), and make the magic happen with
-.launch(). .launch() will find and import program documentation from 
-docsfiles, find and read configuration from various configfiles, parse command
-line parameters, exit with helpful error messages on parameter format errors 
-(like when the user types 'monkey' when the program expects a number, or gives
-a read-only file to write results to, and so on), and finally it will react to
-some ueful options (--help, --HELP, --version and --settings, see the example 
-just above). You can of course customize all this, or avoid calling .launch() 
-alltogether. Read method and class docs to see how it's done.
-
+info to the user. Instantiate with metainfo (see GET_METAINFO() DOCSTRING 
+SYNTAX just below) and a list of options and positional arguments, and tui will
+find and read program documentation from docsfiles, find and parse settings 
+from various configfiles and the command line, and will exit with helpful error
+messages on parameter format errors (like when the user types 'monkey' when the
+program expects a number, or gives a read-only file to write results to, and so
+on), and finally it will react to some useful options (--help, --HELP, 
+--version and --settings, see the example just above). You can of course 
+customize all this, or sidestep the magic alltogether. Read method and class 
+docs to see how it's done.
 
 The format classes in the tui.formats module know how to take user supplied
 strings and transform them into validated values usable in your program, for
@@ -158,15 +161,16 @@ GET_METAINFO() DOCSTRING SYNTAX:
 If you've written your program __doc__ string right there is probably a lot of 
 of useful program metainfo in there, which you could probably pull out using 
 some simple string mangling tricks and feed to tui directly. get_metainfo() is 
-a simple helper that can help you do this as long as you take care writing your
-docstring carefully. By default, it will return a metainfo dict with keys  
-'author', 'command', 'contact', 'copyright', 'description', 'download', 
-'progname', 'version' and 'website'. 
+a simple helper that can help you do this as long as you take a little care 
+writing your docstring carefully. By default, it will return a metainfo dict 
+with keys 'author', 'command', 'contact', 'copyright', 'description', 
+'download', 'progname', 'version' and 'website'. 
 
 The docstring needs to be multiline and the closing quotes need to be first 
-on a line, optionally preceeded by whitespace. 
+on a line, optionally preceded by whitespace. 
 
-Command is assumed to be splitext(basename(scriptfile))[0] (from os.path).
+Command is assumed to be os.path.basename(scriptfile) with any trailing .py*
+filename extension removed.
 
 The first non-whitespace line is re.search'ed using first_line_pattern, 
 default e.g (version optional, contains no whitespace): PROGNAME [vVERSION]
@@ -176,7 +180,7 @@ description.
 
 See python code above for a syntax example, and function docstring below for 
 customisation details. This function will only make minimal efforts to succeed. 
-If it doesn't fit your style: roll your own. It's really not that hard!
+If it doesn't fit your style: roll your own! It's really not that hard.
 
 
 DOCSFILE SYNTAX:
@@ -318,9 +322,9 @@ class ParseError(Exception):
 class BadArgument(ParseError):
     """Raised when options get literals incompatible with their Format."""
     
-    template = "%r is not an acceptable argument for %s (%s)."
+    template = "%s is not an acceptable argument for %s (%s)."
 
-    def __init__(self, value=None, name=None, details=None, message=None):
+    def __init__(self, name, value, details, message=None):
         super(BadArgument, self).__init__(value, name, details, message=message)
 
 class BadNumberOfArguments(ParseError):
@@ -328,7 +332,7 @@ class BadNumberOfArguments(ParseError):
 
     template = "%s requires %s arguments and was given %s."
     
-    def __init__(self, name=None, n_required=None, n_given=None, message=None):
+    def __init__(self, name, n_required, n_given, message=None):
         super(BadNumberOfArguments, self).__init__(name, n_required, n_given, message=message)
 
 class InvalidOption(ParseError):
@@ -336,7 +340,7 @@ class InvalidOption(ParseError):
     
     template = "The option %s does not exist."
 
-    def __init__(self, name=None, message=None):
+    def __init__(self, name, message=None):
         super(InvalidOption, self).__init__(name, message=message)
         
 class OptionRecurrenceError(ParseError):
@@ -344,7 +348,7 @@ class OptionRecurrenceError(ParseError):
 
     template = "The option %s can only be used once in an argument list."
 
-    def __init__(self, name=None, message=None):
+    def __init__(self, name, message=None):
         super(OptionRecurrenceError, self).__init__(name, message=message)
 
 class ReservedOptionError(ParseError):
@@ -352,7 +356,7 @@ class ReservedOptionError(ParseError):
 
     template = "The option %s is reserved for command line use."
 
-    def __init__(self, name=None, message=None):
+    def __init__(self, name, message=None):
         super(ReservedOptionError, self).__init__(name, message=message)
         
 class BadAbbreviationBlock(ParseError):
@@ -363,7 +367,7 @@ class BadAbbreviationBlock(ParseError):
     """
     template = "Option %s in the abbreviation block %s is illegal (%s)."
 
-    def __init__(self, abbreviation=None, block=None, details=None, message=None):
+    def __init__(self, abbreviation, block, details, message=None):
         super(BadAbbreviationBlock, self).__init__(abbreviation, block, details, message=message)
 
 ## Internal helpers
@@ -658,7 +662,7 @@ class Option(Parameter):
         except formats.BadNumberOfArguments, e:
             raise BadNumberOfArguments(usedname, e.required, e.supplied)
         except formats.BadArgument, e:
-            raise BadArgument(e.argument, usedname, e.message)
+            raise BadArgument(usedname, e.argument, e.message)
         if self.recurring:
             self.value.append(value)
         else:
@@ -682,7 +686,7 @@ class Option(Parameter):
         except formats.BadNumberOfArguments, e:
             raise BadNumberOfArguments(usedname, e.required, e.supplied)
         except formats.BadArgument, e:
-            raise BadArgument(e.argument, usedname, e.message)
+            raise BadArgument(usedname, e.argument, e.message)
         if self.recurring:
             self.value.append(value)
         else:
@@ -763,8 +767,11 @@ class PositionalArgument(Parameter):
         except formats.BadNumberOfArguments, e:
             raise BadNumberOfArguments(self.displayname, e.required, e.given)
         except formats.BadArgument, e:
-            raise BadArgument(e.argument, self.displayname, e.message)
+            raise BadArgument(self.displayname, e.argument, e.details)
 
+# A handy alias, to keep you guys from having to type so much.
+Posarg = PositionalArgument
+ 
 class tui(TUIBase):
     """Textual user interface."""
     
@@ -784,6 +791,7 @@ class tui(TUIBase):
                          'files']
     
     def __init__(self,
+                 parameters=None,
                  version=None,
                  install_dir=None,
                  progname=None,
@@ -809,15 +817,11 @@ class tui(TUIBase):
                  configfilenames=None,
                  sections=None,
                  ignore=None,
-                 options=None,
-                 option_order=None,
-                 abbreviations=None,
-                 positional_args=None,
-                 positional_arg_values=None,
                  helpoption=help_option,
                  longhelpoption=longhelp_option,
                  versionoption=version_option,
-                 settingsoption=settings_option):
+                 settingsoption=settings_option,
+                 launch=True):
         """
         Many of the metainfo parameters (author, progname...) should already
         be present in the program docstring if you're coding by the book. You 
@@ -829,7 +833,7 @@ class tui(TUIBase):
         .readdocs() can read most user documentaion from external docsfiles, 
         so there is typically no need to supply that on instantiation. See the
         docsfile parameter. Parameters that can be set using .readdocs() are 
-        marhed with percent% below.
+        marked with percent% below.
         
         All parameters that take a list of indented paragraphs can use docvars.
         They also accept just a string which, is then taken as a list of one 
@@ -841,6 +845,9 @@ class tui(TUIBase):
         helpoption, longhelpoption, versionoption and settingsoption at 
         instantiation will not activate their documented functionality. Use 
         e.g. .start() for this.
+        
+        parameters is a list of Options and PositionalArguments to be added
+        to the user interface.
         
         version* is the current program version string. Although you *can* set
         this using get_metainfo, you typically want to pass __version__ here
@@ -964,8 +971,31 @@ class tui(TUIBase):
         settingsoption adds an option that lets the user print a brief summary
         of program settings. Default is '--settings' or '-S', option reserved 
         for command line use). None means don't add such an option.
+        
+        If launch is True (default) then .launch() will be called after 
+        initiallization.  
         """
         params = locals()
+        self.options = dict()
+        self.option_order = []
+        self.abbreviations = dict()
+        self.positional_args = []
+        for p in parameters:
+            if isinstance(p, Option):
+                self._add_option(p)
+            elif isinstance(p, PositionalArgument):
+                self._add_positional_argument(p)
+            else:
+                raise TypeError('unknown parameter type')
+        self.basic_option_names = dict()
+        for optiontype in ['help', 'longhelp', 'settings', 'version']:
+            option = params[optiontype + 'option']
+            if not option:
+                continue
+            if not isinstance(option, Option):
+                option = option()
+            self._add_option(option)
+            self.basic_option_names[optiontype] = option.name
         if command is None:
             command = os.path.basename(sys.argv[0])
             basename, ext = os.path.splitext(command)
@@ -996,8 +1026,8 @@ class tui(TUIBase):
                 docsfiles = [os.path.join(install_dir, f) for f in docsfilenames]
         elif docsfilenames:
             raise ValueError('do not use docsfilenames together with docsfiles')
-        self.docsfiles = docsfiles
-            
+        self.read_docs(docsfiles)
+        
         self.sections = _list(sections, [command])
         if configfiles is None:
             if configdirs is None:
@@ -1017,32 +1047,12 @@ class tui(TUIBase):
         if self.configfiles:
             self.addconfigfiledocs()
         
-        if options is None:
-            options = dict()
-        self.options = options
-        if option_order is None:
-            option_order = options.keys()
-        self.option_order = option_order
-        if abbreviations is None:
-            abbreviations = dict((o.abbreviation, o) for o in options.values())
-        self.abbreviations = abbreviations
-        if positional_args is None:
-            positional_args = []
-        self.positional_args = positional_args
-        
-        self.basic_option_names = dict()
-        for optiontype in ['help', 'longhelp', 'settings', 'version']:
-            option = params[optiontype + 'option']
-            if not option:
-                continue
-            if not isinstance(option, Option):
-                option = option()
-            self.addoption(option)
-            self.basic_option_names[optiontype] = option.name
-
         if not width:
             width = get_terminal_size()[0]
         self.width = width
+        
+        if launch:
+            self.launch()
 
     def __iter__(self):
         """Iterate over .keys()."""
@@ -1099,7 +1109,7 @@ class tui(TUIBase):
         except:
             raise KeyError('no such option or positional argument')
     
-    def addoption(self, option):
+    def _add_option(self, option):
         """Add an Option object to the user interface."""
         if option.name in self.options:
             raise ValueError('name already in use')
@@ -1112,46 +1122,7 @@ class tui(TUIBase):
             self.abbreviations[option.abbreviation] = option
         self.option_order.append(option.name)
 
-    def makeoption(self, 
-                   name, 
-                   format, 
-                   abbreviation=None,
-                   default=_UNSET,
-                   recurring=False, 
-                   reserved=False, 
-                   docs=None):
-        """Create an option and add it to the user interface.
-
-        This is a convenience method for .addoption(Option(...)) and takes the
-        same arguments. 
-        
-        name is the option name. Used in settings files and with a '--' prefix
-        on the command line. This should be as brief and descriptive as 
-        possible. Must be at least length 2, must start and end with a letter 
-        or number and may contain letters, numbers, underscores and hyphens in
-        between.
-        
-        format should be a formats.Format subclass or instance, and determines
-        how this option behaves and what arguments it may require. 
-
-        abbreviation (if given) is the one-letter (or digit) abbreviation of 
-        the option name. Used with a '-' prefix on the command line.
-
-        default is the option's default value. Omit to use format.default, or 
-        an empty list if the option is recurring.
-
-        If reserved is true the option will be reserved for command line use.
-        
-        docs is user friendly help text for the option. None means use 
-        format.docs.
-        
-        If recurring is true, the option allowed to occur several times on the
-        command line. .value will then be a list of all parsed values, in 
-        parsing order. 
-        """
-        self.addoption(Option(name, format, abbreviation, default, recurring, reserved, docs))
-
-    def addposarg(self, posarg):
+    def _add_positional_argument(self, posarg):
         """Append a positional argument to the user interface.
 
         Optional positional arguments must be added after the required ones. 
@@ -1165,42 +1136,7 @@ class tui(TUIBase):
                 raise ValueError("required positional arguments must precede optional ones")
         self.positional_args.append(posarg)
     
-    def makeposarg(self, 
-                   name, 
-                   format, 
-                   recurring=False, 
-                   optional=False,
-                   docs=None):
-        """Create a positional argument and add it to the user interface.
-
-        This is a convenience method for .addposarg(PositionalArgument(...))
-        and takes the same arguments.
-         
-        Optional positional arguments must be added after the required ones. 
-        The user interface can have at most one recurring positional argument, 
-        and if present, that argument must be the last one.
-
-        name is the name of the positional argument. Must be at least length 2,
-        must start and end with a letter or number and may contain letters, 
-        numbers, underscores and hyphens in between.
-        
-        format should be a formats.Format subclass or instance, and determines
-        how this positional argument behaves and what arguments it may require. 
-        The name of one of the formats in the tui.formats module is also 
-        accepted.
-        
-        docs is user friendly help text for the option. None means use 
-        format.docs.
-        
-        If recurring is true, this positional argument can be used multiple 
-        times on the command line, and .parse() will consume all arguments fed to it.
-        
-        If optional is true, the user is permitted to omit this argument from 
-        the command line?
-        """
-        self.addposarg(PositionalArgument(name, format, recurring, optional, docs))
-
-    def readdocs(self, docsfiles):
+    def read_docs(self, docsfiles):
         """Read program documentation from a DocParser compatible file.
 
         docsfiles is a list of paths to potential docsfiles: parse if present.
@@ -1248,7 +1184,7 @@ class tui(TUIBase):
         docs.append('')
         self.docs['files']['CONFIGFILE'] = docs
 
-    def parsefiles(self, files=None, sections=None):
+    def parse_files(self, files=None, sections=None):
         """Parse configfiles. 
         files <list str>, <str> or None:
             What files to parse. None means use self.configfiles. New
@@ -1282,7 +1218,7 @@ class tui(TUIBase):
                         value = parser.get(section, name)
                         self.options[name].parsestr(value, name, '%r [%s]' % (file, section))
 
-    def _parseoptions(self, argv, location):
+    def _parse_options(self, argv, location):
         """Parse the options part of an argument list.
         IN:
         lsArgs <list str>:
@@ -1327,7 +1263,7 @@ class tui(TUIBase):
             else:
                 break
 
-    def _parsepositionalargs(self, argv):
+    def _parse_positional_arguments(self, argv):
         """Parse the positional arguments part of an argument list.
         argv <list str>:
             List of arguments. Will be altered.
@@ -1343,7 +1279,7 @@ class tui(TUIBase):
             required = len([p.nargs for p in self.positional_args])
             raise BadNumberOfArguments(message=msg % (required, required + len(argv)))
             
-    def parseargs(self, argv=None, location='Command line.'):
+    def parse_argv(self, argv=None, location='Command line.'):
         """Parse command line arguments.
         
         args <list str> or None:
@@ -1358,8 +1294,8 @@ class tui(TUIBase):
         if argv is None:
             argv = list(sys.argv)
         argv.pop(0)
-        self._parseoptions(argv, location)
-        self._parsepositionalargs(argv)
+        self._parse_options(argv, location)
+        self._parse_positional_arguments(argv)
 
     def optionhelp(self, indent=0, maxindent=25, width=79):
         """Return user friendly help on program options."""
@@ -1381,7 +1317,7 @@ class tui(TUIBase):
     def posarghelp(self, indent=0, maxindent=25, width=79):
         """Return user friendly help on positional arguments in the program."""
         docs = []
-        makelabel = lambda posarg: ' ' * indent + posarg.name.upper() + ': '
+        makelabel = lambda posarg: ' ' * indent + posarg.displayname + ': '
         helpindent = _autoindent([makelabel(p) for p in self.positional_args], indent, maxindent)
         for posarg in self.positional_args:
             label = makelabel(posarg)
@@ -1409,9 +1345,9 @@ class tui(TUIBase):
             if posarg.optional:
                 usage += "[" 
                 optional += 1
-            usage += posarg.name.upper()
+            usage += posarg.displayname
             if posarg.recurring:
-                usage += ' [%s2 [...]]' % posarg.name.upper().replace('-', '_')
+                usage += ' [%s2 [...]]' % posarg.displayname
         usage += ']' * optional
         return usage
 
@@ -1481,30 +1417,6 @@ class tui(TUIBase):
         out.append('')
         return '\n'.join(out)
 
-    def deleteme_help(self, width=0):
-        """Return the standard formatted command line help for the prog.
-
-        width is maximum allowed page width, use self.width if 0.
-        """
-        out = []
-        out.append(self._wrap(self.docs['title'], width=width))
-        if self.docs['description']:
-            out.append(self._wrap(self.docs['description'], indent=2, width=width))
-        out.append('')
-        out.append(self._wrapusage(width=width))
-        if self.positional_args:            
-            out.append('')
-            out.append('ARGUMENTS:')
-            out.append(self.posarghelp(indent=2, width=width))
-        if self.options:
-            out.append('')
-            out.append('OPTIONS:')
-            out.append(self.optionhelp(indent=2, width=width))
-        if self.docs['general']:
-            out.append('')
-            out.append(self._wraptext(self.docs['general'], indent=2, width=width))
-        return '\n'.join(out)
-
     def customhelp(self, help_sections, width=0):
         out = []
         def heading(name):
@@ -1560,62 +1472,6 @@ class tui(TUIBase):
         """
         return self.customhelp(self.longhelp_sections, width)
                 
-    def deleteme_longhelp(self, width=0):
-        """Return the standard formatted help text for the prog. 
-        
-        This should have approximately the amount of information as you'd 
-        expect in a man page.
-
-        width is maximum allowed page width, use self.width if 0.
-        """
-        out = []
-        out.append(self._wrap(self.docs['title'], width=width))
-        if self.docs['description']:
-            out.append(self._wrap(self.docs['description'], indent=2, width=width))
-        if self.docs['contact']:
-            out.append('')
-            out.append('CONTACT:')
-            out.append(self._wraptext(self.docs['contact'], indent=2, width=width))
-        if self.docs['website']:
-            out.append('')
-            out.append('WEBSITE:')
-            out.append(self._wraptext(self.docs['website'], indent=2, width=width))
-        if self.docs['download']:
-            out.append('')
-            out.append('DOWNLOAD:')
-            out.append(self._wraptext(self.docs['download'], indent=2, width=width))
-        if self.docs['copyright']:
-            out.append('')
-            out.append('COPYRIGHT:')
-            out.append(self._wraptext(self.docs['copyright'], indent=2, width=width))
-        if self.docs['license']:
-            out.append('')
-            out.append('LICENSE:')
-            out.append(self._wraptext(self.docs['license'], indent=2, width=width))
-        out.append('')
-        out.append(self._wrapusage(width=width))
-        if self.positional_args:            
-            out.append('')
-            out.append('ARGUMENTS:')
-            out.append(self.posarghelp(indent=2, width=width))
-        if self.options:
-            out.append('')
-            out.append('OPTIONS:')
-            out.append(self.optionhelp(indent=2, width=width))
-        if self.docs['general']:
-            out.append('')
-            out.append(self._wraptext(self.docs['general'], indent=2, width=width))
-        if self.docs['additional']:
-            out.append('')
-            out.append('ADDITIONAL:')
-            out.append(self._wraptext(self.docs['additional'], indent=2, width=width))
-        if self.docs['files']:
-            out.append('FILES:')
-            for file, docs in self.docs['files'].items():
-                out.append('  %s:' % file)
-                out.append(self._wraptext(docs, indent=4, width=width))
-        return '\n'.join(out)
-
     def strsettings(self, indent=0, maxindent=25, width=0):
         """Return user friendly help on positional arguments.        
 
@@ -1661,39 +1517,28 @@ class tui(TUIBase):
                debug_parser=False):
         """Do the usual stuff to initiallize the program.
         
-        Read docs and config files, parse arguments and print help, usage, 
-        version and settings on demand and halt afterwards.
-        ARGS:
-        debugparser = False <bool>:
-            Don't catch ParseErrors and give user friendly hints. Crash
-            instead and give a traceback.
-        docsfile = None <str> or None:
-            Read a specific docsfile. '' means don't read any docs. None
-            means use the default from self.sDocsFile.
-        configfiles = None <list str>, <str> or None:
-            Use a specific set of config files. None means use the default.
-        sections = None <list str>, <str> or None:
-            Read a specific set of config sections. None means use the
-            default.
-        argv = None <list str> or None:
-            Use this argument list. Will be modified. None means use copy of 
-            sys.argv. argv[0] is ignored.
-        showusageonnoargs = False <bool>:
-            Show usage and exit if the user didn't give any args. Should be
-            set to False if there are no required PositionalArgs in the UI.
-        width = 0 <int>:
-            Maximum allowed page width. 0 means use default from
-            self.iMaxHelpWidth.
-        helphint = "Use with --help or --HELP for more help." <str>:
-            Give this hint on getting more help at the end of usage
-            messages. Note that the default value really ends with a
-            newline which has been stripped from the docs for reasons
-            of readability.
-
+        Read config files and parse arguments, and if the user has used any 
+        of the help/version/settings options, display help and exit.
+        
+        If debug_parser is false, don't catch ParseErrors and exit with user
+        friendly help. Crash with traceback instead.
+        
+        configfiles is a list of config files. None means use self.configfiles.
+        
+        sections is a list of configfile section names to read. None means use
+        self.sections.
+        
+        argv is a list of arguments to parse. Will be modified. None means use
+        copy of sys.argv. argv[0] is ignored.
+        
+        If showusageonnoargs is true, show usage and exit if the user didn't 
+        give any args. Should be False if there are no required PositionalArgs.
+        
+        width is the maximum allowed page width. 0 means use self.width.
+        
+        helphint is a string that hints on how to get more help which is 
+        displayed at the end of usage help messages. 
         """
-        if argv is None:
-            argv = list(sys.argv)
-        self.readdocs(self.docsfiles)
         if showusageonnoargs and len(argv) == 1:
             print self.shorthelp(width=width)
             if helphint:
@@ -1701,8 +1546,8 @@ class tui(TUIBase):
             sys.exit(0)
         parsing_error = None
         try:
-            self.parsefiles()
-            self.parseargs(argv)
+            self.parse_files()
+            self.parse_argv(argv)
         except ParseError, parsing_error:
             if debug_parser:
                 raise

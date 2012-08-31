@@ -52,9 +52,7 @@ _UNSET = []
 
 class BaseFormat(object):
     """Base for the format API."""
-    # These should not be none in subclasses.
     default = None
-    name = None
 
     # nargs < 0 implies variable number of args, which is probably a bad idea
     # in most circumstances.
@@ -78,8 +76,8 @@ class BaseFormat(object):
         if addspecialdocs and special:
             self._docs = self.docs + ' These special values are accepted: ' + ', '.join(repr(s) for s in special) + '.' 
     
-    _docs = None
-    docs = property(lambda self: self._docs or self.__class__.__doc__.splitlines()[0].strip())
+    docs = property(lambda self: getattr(self, '_docs', self.__class__.__doc__.splitlines()[0].strip()))
+    name = property(lambda self: getattr(self, '_name', self.__class__.__name__))
 
     def parse(self, argv):
         """Pop, parse and return the first self.nargs items from args.
@@ -224,7 +222,6 @@ class Flag(Format):
     
     default = False
     nargs = 0
-    name = 'Flag'
     true = ['1', 'yes', 'true', 'on']
     false = ['0', 'no', 'false', 'off']
     allowed = ', '.join(true + false[:-1]) + ' or ' + false[-1]
@@ -253,12 +250,10 @@ class Flag(Format):
 class String(Format):
     "A string of characters."
     default = ''
-    name = 'String'
     
 class Int(Format):
     """An integer number."""
     default = 0
-    _shortname = 'Int'
     
     def __init__(self,
                  lower=None,
@@ -301,24 +296,25 @@ class Int(Format):
     
     @property
     def name(self):
+        _name = getattr(self, '_name', self.__class__.__name__)
         if self.lower is not None:
             if self.upper is not None:
-                return (self._shortname + 
+                return (_name + 
                         (self.lowerinclusive and '[' or '<') +
                         self.to_literal(self.lower, *self.args, **self.kw) +
                         ',' +
                         self.to_literal(self.upper, *self.args, **self.kw) +
                         (self.upperinclusive and ']' or '>'))
-            return (self._shortname +
+            return (_name +
                     '>' +
                     (self.lowerinclusive and '=' or '') +
                     self.to_literal(self.lower, *self.args, **self.kw))
         if self.upper is not None:
-            return (self._shortname +
+            return (_name +
                     '<' +
                     (self.upperinclusive and '=' or '') +
                     self.to_literal(self.upper, *self.args, **self.kw))
-        return self._shortname
+        return _name
 
     def _to_python(self, literal):
         return int(literal)
@@ -342,7 +338,6 @@ class Int(Format):
 class Float(Int):
     """A decimal number."""
     default = 0.0
-    _shortname = 'Float'
     formatter = None
     
     def __init__(self,
@@ -371,19 +366,20 @@ class Float(Int):
     
 class Percentage(Float):
     """A decimal number in percent units."""
-    _shortname = 'Percentage'
     
 class ReadableFile(Format):
-    """A readable file."""
-    name = 'ReadableFile'
+    """A readable file.
+
+    Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
+    os.path.expanduser().
+    """
     mode = 'r'
     
     def to_python(self, literal):
         try:
-            open(literal, self.mode)
+            return open(os.path.expanduser(literal), self.mode)
         except IOError, e:
             raise ValueError(e.strerror)
-        return literal
 
 class WritableFile(ReadableFile):
     """A writable file, will be created if possible.
@@ -391,7 +387,6 @@ class WritableFile(ReadableFile):
     Understands home directory expansion (e.g. ~/foo or ~joel/foo) using 
     os.path.expanduser().
     """
-    name = 'WritableFile'
     mode = 'a'
     
 class ReadableDir(Format):
@@ -421,7 +416,6 @@ class WritableDir(ReadableDir):
         
 class Choice(Format):
     """Choose among the allowed values."""
-    name = 'Choice'
     
     def __init__(self,
                  choices,
