@@ -1,6 +1,8 @@
 .project
 .pydevproject
-src/build/
+build/
 **.pyc
 **.pyo
-src/dist
+dist
+**~
+

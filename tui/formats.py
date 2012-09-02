@@ -58,10 +58,16 @@ class BaseFormat(object):
     # in most circumstances.
     nargs = 1
 
-    def __init__(self,                  
+    def __init__(self,
+                 name=None,
+                 nargs=None,     
                  special=None,
                  casesensitive=False,
                  addspecialdocs=True):
+        if name is not None:
+            self._name = name
+        if nargs is not None:
+            self.nargs = nargs
         if isinstance(special, basestring):
             special = {special: special}
         elif special is None:
@@ -296,25 +302,27 @@ class Int(Format):
     
     @property
     def name(self):
-        _name = getattr(self, '_name', self.__class__.__name__)
+        if getattr(self, '_name', None):
+            return self._name
+        name = self.__class__.__name__
         if self.lower is not None:
             if self.upper is not None:
-                return (_name + 
+                return (name + 
                         (self.lowerinclusive and '[' or '<') +
                         self.to_literal(self.lower, *self.args, **self.kw) +
                         ',' +
                         self.to_literal(self.upper, *self.args, **self.kw) +
                         (self.upperinclusive and ']' or '>'))
-            return (_name +
+            return (name +
                     '>' +
                     (self.lowerinclusive and '=' or '') +
                     self.to_literal(self.lower, *self.args, **self.kw))
         if self.upper is not None:
-            return (_name +
+            return (name +
                     '<' +
                     (self.upperinclusive and '=' or '') +
                     self.to_literal(self.upper, *self.args, **self.kw))
-        return _name
+        return name
 
     def _to_python(self, literal):
         return int(literal)
@@ -374,12 +382,14 @@ class ReadableFile(Format):
     os.path.expanduser().
     """
     mode = 'r'
+    default = ''
     
     def to_python(self, literal):
         try:
-            return open(os.path.expanduser(literal), self.mode)
+            open(os.path.expanduser(literal), self.mode)
         except IOError, e:
             raise ValueError(e.strerror)
+        return literal
 
 class WritableFile(ReadableFile):
     """A writable file, will be created if possible.
@@ -465,8 +475,8 @@ class List(Metaformat):
                  separator_name=None,
                  strip=True,
                  **kw):
-        super(List, self).__init__(**kw)
         self.format = get_format(format)
+        super(List, self).__init__(**kw)
         if self.format.nargs == 0:
             raise ValueError('format.nargs cannot be 0')
         self.separator = separator or self.__class__.separator

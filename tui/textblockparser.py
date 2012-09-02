@@ -196,8 +196,10 @@ class TextBlockParser(object):
             tag = line.split(':', 1)[0].strip()
             # Still in the same block?
             if tag not in self.names:
-                if block is None and not line.isspace():
-                    raise ParseError(file.name, line, "garbage before first block: %r" % line)
+                if block is None:
+                    if line and not line.isspace():
+                        raise ParseError(file.name, line, "garbage before first block: %r" % line)
+                    continue
                 block.addline(line)
                 continue
             # Open a new block.

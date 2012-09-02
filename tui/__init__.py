@@ -35,22 +35,25 @@ def main(argv=sys.argv):
     ui = tui([Option('quiet', 'Flag', 'q'),
               Option('noise', 'Int', 'v', default=10),
               Option('job-tag', 'String', recurring=True),
-              Posarg('in-file', formats.ReadableFile(special={'-':sys.stdin})),
+              Posarg('in-file', formats.ReadableFile(special={'-': None})),
               Posarg('out-file', formats.WritableFile, optional=True)],
              version=__version__,
-             install_dir=__file__,
+             install_dir=mypackage, # or __file__ if your .cfg is here. 
              ignore=['squeegees'],
              **get_metainfo(__file__))
     # Any additional custom parameter checking:
-    if ui['noise'] == 9000:
+    if ui['noise'] > 9000:
         ui.graceful_exit(BadArgument('noise', ui['noise'], 'way too chatty'))
     if ui['in-file'] and open(ui['in-file']).read() == 'bad content':
         ui.graceful_exit('custom error message')
     # Tweak stuff if needed:
-    if ui['noise'] == 8000:
-        ui['verbosity'] = 16000
+    if ui['noise'] < 8000:
+        ui['noise'] %= 7
     # Go time!
-    return mypackage.do_stuff(**ui.dict())
+    try:
+        return mypackage.do_stuff(**ui.dict())
+    except KeyboardInterrupt:
+        ui.graceful_exit('interrupted by user')
     
 if __name__ == '__main__':
     sys.exit(main() or 0)
@@ -187,18 +190,21 @@ DOCSFILE SYNTAX:
 Docsfiles are written as blocks, which start with a tag line followed by one or
 more lines of text. Tags can be any of:
 
-TAG          TYPE                   NAME
-ADDITIONAL:  [multiple paragraphs]  additional
-CONTACT:     [multiple paragraphs]  contact
-COPYRIGHT:   [multiple paragraphs]  copyright
-DESCRIPTION: [single paragraph]     description
-GENERAL:     [multiple paragraphs]  general
-TITLE:       [single paragraph]     title
-USAGE:       [single paragraph]     usage
+TAG          TYPE
+ADDITIONAL:  [multiple paragraphs]
+CONTACT:     [multiple paragraphs]
+COPYRIGHT:   [multiple paragraphs]
+DESCRIPTION: [single paragraph]
+DOWNLOAD:    [multiple paragraphs]
+GENERAL:     [multiple paragraphs]
+GIT:         [multiple paragraphs]
+SUBVERSION:  [multiple paragraphs]
+TITLE:       [single paragraph]
+USAGE:       [single paragraph]
 
 Additionally, these labelled blocks are available:
-PARAMETER:   [single paragraph]     parameters
-FILE:        [multiple paragraphs]  files
+PARAMETER:   [single paragraph]
+FILE:        [multiple paragraphs]
 
 which also require a label on the tag line (see examples above).
 
@@ -264,7 +270,7 @@ THE SOFTWARE.
 
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.0rc1"
 __copyright__ = "Copyright (c) 2012 Joel Hedlund."
 __license__ = "MIT"
 
@@ -406,6 +412,8 @@ class DocParser(TextBlockParser):
         self.addblock('contact', IndentedParagraphs)
         self.addblock('website', IndentedParagraphs)
         self.addblock('download', IndentedParagraphs)
+        self.addblock('git', IndentedParagraphs)
+        self.addblock('subversion', IndentedParagraphs)
         self.addblock('copyright', IndentedParagraphs)
         self.addblock('license', IndentedParagraphs)
         self.addblock('general', IndentedParagraphs)
@@ -475,8 +483,7 @@ def _autoindent(labels, indent=0, maxindent=25, extra=2):
 ## Public API
 
 def get_metainfo(scriptfile,
-                 command=None,
-                 keywords=['author', 'contact', 'copyright', 'download', 'version', 'website'],
+                 keywords=['author', 'contact', 'copyright', 'download', 'git', 'subversion', 'version', 'website'],
                  special={},
                  first_line_pattern=r'^(?P<progname>.+)(\s+v(?P<version>\S+))?',
                  keyword_pattern_template=r'^\s*%(pretty)s:\s*(?P<%(keyword)s>\S.+?)\s*$',
@@ -489,9 +496,6 @@ def get_metainfo(scriptfile,
     This function will only make minimal efforts to succeed. If you need 
     anything else: roll your own.
     
-    If command is None, it is assumed to be os.path.basename(scriptfile) minus
-    any .py? filename extension.
-
     The docstring needs to be multiline and the closing quotes need to be first 
     on a line, optionally preceeded by whitespace. 
     
@@ -515,12 +519,9 @@ def get_metainfo(scriptfile,
     patterns = dict((kw, re.compile(keyword_pattern_template % dict(pretty=prettify(kw), keyword=kw))) for kw in keywords)
     patterns.update(special)
     metainfo = dict()
-    command = os.path.basename(scriptfile)
-    basename, ext = os.path.splitext(command)
-    if ext.startswith('.py'):
-        command = basename
-    metainfo['command'] = command
-
+    
+    if scriptfile[-4:] in ['.pyc', '.pyo']: 
+        scriptfile = scriptfile[:-1]
     script = open(scriptfile)
     closer = ''
     for line in script:
@@ -718,7 +719,8 @@ class PositionalArgument(Parameter):
         format.docs.
         
         If recurring is true, this positional argument can be used multiple 
-        times on the command line, and .parse() will consume all arguments fed to it.
+        times on the command line, and .parse() will consume all arguments fed
+        to it.
         
         If optional is true, the user is permitted to omit this argument from 
         the command line?
@@ -750,11 +752,11 @@ class PositionalArgument(Parameter):
         
         Recurring PositionalArgumants get a list as .value.
         
-        Optional PositionalArguments that do not get any arguments to parse get 
+        Optional PositionalArguments that do not get any arguments to parse get
         None as .value, or [] if recurring. 
         """
         if not argv and self.optional:
-            self.value = self.recurring and [] or None
+            self.value = [] if self.recurring else None
             return
         try:
             value = self.format.parse(argv)
@@ -769,14 +771,16 @@ class PositionalArgument(Parameter):
         except formats.BadArgument, e:
             raise BadArgument(self.displayname, e.argument, e.details)
 
-# A handy alias, to keep you guys from having to type so much.
-Posarg = PositionalArgument
- 
 class tui(TUIBase):
     """Textual user interface."""
     
     # What sections to include in help and longhelp, and in what order.
-    help_sections = ['title', 'description', 'usage', 'arguments', 'options', 'general']
+    help_sections = ['title',
+                     'description',
+                     'usage',
+                     'arguments',
+                     'options',
+                     'general']
     longhelp_sections = ['title',
                          'description',
                          'contact',
@@ -794,6 +798,10 @@ class tui(TUIBase):
                  parameters=None,
                  version=None,
                  install_dir=None,
+                 argv=None,
+                 launch=True,
+                 # Most of the rest of the args are highly situational.
+                 # Consider calling with **get_metainfo(__file__) instead. 
                  progname=None,
                  author=None,
                  title='%(progname)s v%(version)s by %(author)s.',
@@ -820,8 +828,7 @@ class tui(TUIBase):
                  helpoption=help_option,
                  longhelpoption=longhelp_option,
                  versionoption=version_option,
-                 settingsoption=settings_option,
-                 launch=True):
+                 settingsoption=settings_option):
         """
         Many of the metainfo parameters (author, progname...) should already
         be present in the program docstring if you're coding by the book. You 
@@ -857,44 +864,50 @@ class tui(TUIBase):
         Use containing dir if given a python package or a path to a file (e.g. 
         mypackage or __file__).
         
-        progname* is the user friendly name of the program. Available as a 
+        argv is the list of command line arguments to use (see launch just 
+        below). None means use a copy of sys.argv.
+
+        If launch is True (default) then .launch(argv) will be called after 
+        initiallization.
+         
+        *progname is the user friendly name of the program. Available as a 
         docvar. 
         
-        author* is who made the program. Available as a docvar. 
+        *author is who made the program. Available as a docvar. 
         
         title is what to put in the title line on help pages. Can use docvars.
 
-        description%* is a oneliner describing the program. Can use docvars.
+        *%description is a oneliner describing the program. Can use docvars.
         
-        contact%* is contact information as a list of indented paragraphs.
+        *%contact is contact information as a list of indented paragraphs.
 
-        website%* is the url to the website of the program. Can be given as a
+        *%website is the url to the website of the program. Can be given as a
         list of indented paragraphs if needed.
 
-        download%* is where the program can be downloaded. Can be given as a
+        *%download is where the program can be downloaded. Can be given as a
         list of indented paragraphs if needed.
         
-        copyright%* is copyright information as a list of indented paragraphs. 
+        *%copyright is copyright information as a list of indented paragraphs. 
         
-        license%* is brief information on the licensing conditions of the 
+        *%license is brief information on the licensing conditions of the 
         program. Can be given as a list of indented paragraphs if needed.
 
-        command* is how to execute the program. Available as a docvar. None 
-        means use the basename of sys.argv[0] minus any .py? filename extension.
+        *command* is how to execute the program. Available as a docvar. None 
+        means use the basename of sys.argv[0].
         
         usage is user friendly help on how to execute the program. Can 
         use docvars. None means auto generate from options and positional 
         arguments.
         
-        general% is general program documentation as a list of indented
+        %general is general program documentation as a list of indented
         paragraphs. Typically displayed on the normal help page. 
 
-        additional% is additional program documentation as a list of indented
+        %additional is additional program documentation as a list of indented
         paragraphs. Typically only displayed in verbose help (longhelp). 
 
-        note% is the same as additional, only with a different label.
+        %note is the same as additional, only with a different label.
 
-        filedocs% is documentation on files used by the program, as a dict of
+        %filedocs is documentation on files used by the program, as a dict of
         file names and indented paragraphs. Typically only displayed in 
         verbose help (longhelp). Keys and values may use docvars. None means 
         no such documentation.
@@ -915,8 +928,8 @@ class tui(TUIBase):
         
         configdirs is a list of paths to directories to search for configfiles.
         None means [install_dir (if given), '/etc/' + command, '~/.' + command].
-        A str means a list of one item. Do not use together with the configfiles
-        parameter.
+        A str means the same, but with this string replacing command. Do not 
+        use together with the configfiles parameter.
         
         configfilenames is a list of basenames of configfiles. A str means a 
         list of one item. None means [command + '.conf']. Do not use together 
@@ -971,9 +984,6 @@ class tui(TUIBase):
         settingsoption adds an option that lets the user print a brief summary
         of program settings. Default is '--settings' or '-S', option reserved 
         for command line use). None means don't add such an option.
-        
-        If launch is True (default) then .launch() will be called after 
-        initiallization.  
         """
         params = locals()
         self.options = dict()
@@ -996,11 +1006,6 @@ class tui(TUIBase):
                 option = option()
             self._add_option(option)
             self.basic_option_names[optiontype] = option.name
-        if command is None:
-            command = os.path.basename(sys.argv[0])
-            basename, ext = os.path.splitext(command)
-            if ext.startswith('.py'):
-                command = basename
 
         # Did the user give a module/package rather than a path? 
         if isinstance(install_dir, type(sys)):
@@ -1008,7 +1013,10 @@ class tui(TUIBase):
         if isinstance(install_dir, basestring) and os.path.isfile(install_dir):
             install_dir = os.path.dirname(install_dir)
         
-        self.docvars = dict((s, params[s]) for s in ['author', 'command', 'progname', 'version'])
+        self.docvars = dict((s, params[s]) for s in ['author', 'progname', 'version'])
+        if command is None:
+            command = os.path.basename(sys.argv[0])
+        self.docvars['command'] = command
         self.docs = dict(title=_docs(title, self.docvars),
                          usage=_docs(usage, self.docvars),
                          files=_docs(filedocs, self.docvars))
@@ -1030,14 +1038,17 @@ class tui(TUIBase):
         
         self.sections = _list(sections, [command])
         if configfiles is None:
+            dirname = command
+            if isinstance(configdirs, basestring):
+                dirname = configdirs
+                configdirs = None
             if configdirs is None:
                 configdirs = []
                 if install_dir:
                     configdirs.append(install_dir)
-                configdirs += [os.path.join('/etc', command), 
-                               os.path.join(os.path.expanduser('~'), '.' + command)]
-            if configfilenames is None:
-                configfilenames = [command + '.conf']
+                configdirs += [os.path.join('/etc', dirname), 
+                               os.path.expanduser(os.path.join('~', '.' + dirname))]
+            configfilenames = _list(configfilenames, [command + '.conf'])
             configfiles = [os.path.join(d, f) for d in configdirs for f in configfilenames]
         elif configdirs or configfilenames:
             raise ValueError('do not use configfiles together with configdirs and configfilenames')
@@ -1052,7 +1063,7 @@ class tui(TUIBase):
         self.width = width
         
         if launch:
-            self.launch()
+            self.launch(argv)
 
     def __iter__(self):
         """Iterate over .keys()."""
@@ -1155,10 +1166,10 @@ class tui(TUIBase):
 
     def addconfigfiledocs(self):
         docs = ["A %(progname)s configuration file. %(progname)s will look configfiles in the following loctions, and in the following order:" % self.docvars]
-        docs.extend("  %s. %s." % (i + 1, p) for i, p in enumerate(self.configfiles))
+        docs.extend("  %s. %s" % (i + 1, p) for i, p in enumerate(self.configfiles))
         docs.append('')
         docs.append("The following sections will be parsed, and in the following order:")
-        docs.extend("  %s. %s." % (i + 1, s) for i, s in enumerate(self.sections))
+        docs.extend("  %s. [%s]" % (i + 1, s) for i, s in enumerate(self.sections))
         docs.append('')        
         docs.append("The [DEFAULT] section (note uppercase) is always read if present, and it is read as if its contents were copied to the beginning of all other sections. Settings on the command line override any settings found in configfiles.")
         docs.append('')        
@@ -1208,7 +1219,7 @@ class tui(TUIBase):
                     continue
                 for unused in parser.unusedoptions(section):
                     if unused not in self.options and unused not in self.ignore: 
-                        templ = "The option %s in section [%s] of file %s does not exist."
+                        templ = "The option %r in section [%s] of file %s does not exist."
                         raise InvalidOption(unused, message=templ % (unused, section, file))
                 for name in parser.options(section):          
                     if name in self.options:
