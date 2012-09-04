@@ -245,7 +245,7 @@ class Flag(Format):
         argv = shlex.split(argstr, comments=True)
         if len(argv) != 1:
             raise BadNumberOfArguments(1, len(argv))
-        arg = argv[1]
+        arg = argv[0]
         lower = arg.lower()
         if lower in self.true:
             return True

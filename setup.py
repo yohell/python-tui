@@ -1,8 +1,10 @@
 from distutils.core import setup
 
+import tui
+
 setup(name='tui',
-      version='2.0',
-      description='Quickly add a competent textual user interface to your python program.',
+      version=tui.__version__,
+      description='Quickly add competent and helpful configuration to your python programs.',
       platforms='OS Independent',
       author='Joel Hedlund',
       author_email='yohell@ifm.liu.se',
@@ -12,7 +14,8 @@ setup(name='tui',
       license=open('LICENSE.txt').read(),
       long_description='\n' + open('README.txt').read(),
       classifiers=[
-          'Development Status :: 5 - Production/Stable',
+          #'Development Status :: 5 - Production/Stable',
+          'Development Status :: 3 - Alpha',
           'Intended Audience :: Developers',
           'License :: OSI Approved :: MIT License',
           'Operating System :: OS Independent',

@@ -1,6 +1,13 @@
-"""TUI Textual User Interface - A sane command line user interface.
+"""TUI Textual User Interface
+Quickly add competent and helpful configuration to your python programs.
 
-Author: Joel Hedlund <yohell@ifm.liu.se>
+Author:    Joel Hedlund <yohell@ifm.liu.se>
+Download:  http://www.example.com/download
+Git:       https://github.com/yohell/python-tui.git
+Author:    Joel Hedlund <yohell@ifm.liu.se>
+Contact:   Please contact the author.
+Copyright: Copyright (c) 2012 Joel Hedlund.
+License:   The MIT license.
 
 TUI is straightforward to use, both for developers and users. It can parse 
 options from multiple config files and command line, and can produce 
@@ -30,16 +37,17 @@ License:   Name of the license.
 __version__ = "0.1.0"
 import sys
 import mypackage
-def main(argv=sys.argv):
-    from tui import (BadArgument, formats, get_metainfo, tui, Option, Posarg)
+def main(argv=None):
+    from tui import (BadArgument, Option, Posarg, get_metainfo, tui)
+    from tui.formats import (ReadableFile, WritableFile)
     ui = tui([Option('quiet', 'Flag', 'q'),
               Option('noise', 'Int', 'v', default=10),
               Option('job-tag', 'String', recurring=True),
-              Posarg('in-file', formats.ReadableFile(special={'-': None})),
-              Posarg('out-file', formats.WritableFile, optional=True)],
+              Posarg('in-file', ReadableFile(special={'-': None})),
+              Posarg('out-file', WritableFile, optional=True)],
              version=__version__,
-             install_dir=mypackage, # or __file__ if your .cfg is here. 
-             ignore=['squeegees'],
+             install_dir=mypackage, # or __file__ if your .cfg is here.
+             argv=argv, 
              **get_metainfo(__file__))
     # Any additional custom parameter checking:
     if ui['noise'] > 9000:
@@ -99,8 +107,8 @@ And if you like, something like this in myprog.conf:
 [DEFAULT]
 # There is no 'server' option but you can do this to set other vars, see below.
 server = liu.se
-# The squeegee option is ignored in myprog, probably used by a sibling prog.
-squeegee = moo
+# The squeegees option is ignored in myprog, probably used by a sibling prog.
+squeegees = moo
 
 [myprog]
 # This sets job-tag to liu.se/index.html
@@ -771,6 +779,9 @@ class PositionalArgument(Parameter):
         except formats.BadArgument, e:
             raise BadArgument(self.displayname, e.argument, e.details)
 
+# Convenience alias.
+Posarg = PositionalArgument
+
 class tui(TUIBase):
     """Textual user interface."""
     
@@ -786,6 +797,8 @@ class tui(TUIBase):
                          'contact',
                          'website',
                          'download',
+                         'git',
+                         'subversion',
                          'license',
                          'usage',
                          'arguments',
@@ -809,6 +822,8 @@ class tui(TUIBase):
                  contact=None,
                  website=None,
                  download=None,
+                 git=None,
+                 subversion=None,
                  license=None,
                  copyright=None,
                  command=None,
@@ -886,6 +901,12 @@ class tui(TUIBase):
 
         *%download is where the program can be downloaded. Can be given as a
         list of indented paragraphs if needed.
+        
+        *%git is where the source can be accessed by git. Can be given as a
+        list of indented paragraphs if needed.
+        
+        *%subversion is where the source can be accessed by svn. Can be given 
+        as a list of indented paragraphs if needed.
         
         *%copyright is copyright information as a list of indented paragraphs. 
         
@@ -1017,38 +1038,42 @@ class tui(TUIBase):
         if command is None:
             command = os.path.basename(sys.argv[0])
         self.docvars['command'] = command
+        command_base = command
+        if command.endswith('.py'):
+            command_base = command[:-3]
+        
         self.docs = dict(title=_docs(title, self.docvars),
                          usage=_docs(usage, self.docvars),
                          files=_docs(filedocs, self.docvars))
         if filedocs is None:
             filedocs = dict()
         self.docs['files'] = filedocs
-        self.docs.update((name, _list(params[name])) for name in ['additional', 'contact', 'copyright', 'description', 'download', 'general', 'license', 'website'])
+        self.docs.update((name, _list(params[name])) for name in ['additional', 'contact', 'copyright', 'description', 'download', 'general', 'git', 'license', 'subversion', 'website'])
         self.ignore = _list(ignore)
         if docsfiles is None:
             if install_dir:
                 if docsfilenames is None:
                     docsfilenames = [os.path.basename(install_dir) + '.docs']
-                    if command:
-                        docsfilenames.append(command + '.docs')
+                    if command_base:
+                        docsfilenames.append(command_base + '.docs')
                 docsfiles = [os.path.join(install_dir, f) for f in docsfilenames]
         elif docsfilenames:
             raise ValueError('do not use docsfilenames together with docsfiles')
         self.read_docs(docsfiles)
         
-        self.sections = _list(sections, [command])
+        self.sections = _list(sections, [command_base])
         if configfiles is None:
-            dirname = command
+            dirname = command_base
             if isinstance(configdirs, basestring):
                 dirname = configdirs
                 configdirs = None
             if configdirs is None:
                 configdirs = []
-                if install_dir:
+                if install_dir is not None:
                     configdirs.append(install_dir)
                 configdirs += [os.path.join('/etc', dirname), 
                                os.path.expanduser(os.path.join('~', '.' + dirname))]
-            configfilenames = _list(configfilenames, [command + '.conf'])
+            configfilenames = _list(configfilenames, [command_base + '.conf'])
             configfiles = [os.path.join(d, f) for d in configdirs for f in configfilenames]
         elif configdirs or configfilenames:
             raise ValueError('do not use configfiles together with configdirs and configfilenames')
@@ -1223,11 +1248,11 @@ class tui(TUIBase):
                         raise InvalidOption(unused, message=templ % (unused, section, file))
                 for name in parser.options(section):          
                     if name in self.options:
-                        if self.options[name].reserved():
+                        if self.options[name].reserved:
                             templ = "The option %s in section [%s] of file %s is reserved for command line use."
                             raise ReservedOptionError(message=templ % (unused, section, file))
                         value = parser.get(section, name)
-                        self.options[name].parsestr(value, name, '%r [%s]' % (file, section))
+                        self.options[name].parsestr(value, name, '%s [%s]' % (file, section))
 
     def _parse_options(self, argv, location):
         """Parse the options part of an argument list.
@@ -1348,6 +1373,8 @@ class tui(TUIBase):
         if usage is not None:
             return usage[0] % self.docvars
         usage = self.docvars['command']
+        if self.basic_option_names.get('help'):
+            usage += ' [--%s]' % self.basic_option_names.get('help')
         if self.options:
             usage += ' <OPTIONS>'
         optional = 0
@@ -1524,7 +1551,7 @@ class tui(TUIBase):
                argv=None,
                showusageonnoargs=False,
                width=0,
-               helphint="Use with --help or --HELP for more information.\n",
+               helphint="Use with --help for more information.\n",
                debug_parser=False):
         """Do the usual stuff to initiallize the program.
         
